@@ -263,11 +263,12 @@ router.get("/admin-dashboard", async (ctx) => {
   try {
     // ডাটাবেজ থেকে রিলেশনাল জয়েন কুয়েরি চালিয়ে লাইভ ইউজার ও তাদের অডিট রেজাল্ট নিয়ে আসা
     const query = `
-      SELECT u.id, u.name, u.email, u.company_name, u.payment_status, a.score, a.created_at 
-      FROM users u 
-      LEFT JOIN audits a ON u.id = a.user_id
-      ORDER BY u.id DESC
-    `;
+  SELECT DISTINCT ON (u.id) 
+    u.id, u.name, u.email, u.company_name, u.payment_status, a.score, a.created_at 
+  FROM users u 
+  LEFT JOIN audits a ON u.id = a.user_id
+  ORDER BY u.id DESC, a.created_at DESC
+`;
     const result = await dbClient.queryObject<{ id: number; name: string; email: string; company_name: string; payment_status: string; score: number | null; created_at: Date | null }>(query);
 
     let rowsHtml = "";
