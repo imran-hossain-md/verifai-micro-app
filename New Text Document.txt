@@ -9,7 +9,7 @@ postgresql://imran_admin:0ADgJT8ozLAtegtZqQYpOGpSSMzd35zT@dpg-d8odvcc8aovs73fpic
 
 
 
-
+psql "postgresql://imran_admin:0ADgJT8ozLAtegtZqQYpOGpSSMzd35zT@dpg-d8odvcc8aovs73fpichg-a.singapore-postgres.render.com/verifai_db_3k5l"
 
 
 
@@ -20,11 +20,30 @@ https://verifai-micro-app.onrender.com
 
 
 
+পুশ করার সাথে সাথে রেন্ডার (Render) আপনার নতুন কোডটি বিল্ড করা শুরু করবে। ১-২ মিনিটের মধ্যে লাইভ হওয়ার পর আপনি আপনার ক্লাউড লিংকে ([https://verifai-micro-app.onrender.com](https://verifai-micro-app.onrender.com)) ঢুকলে এই চমৎকার ফুল-স্ট্যাক মেকানিজমটি রিয়েল-টাইমে নিজে টেস্ট করতে পারবেন! ইউজার রেজিস্টার হবে, ডাটাবেজে সেভ হবে, পেমেন্ট ইন্টারফেস পার হয়ে অডিট ফর্ম খুলবে।
 
 
 
 
 
+git add .
+git commit -m "feat: upgrade to international enterprise grade architecture with bcrypt, cookies, and admin UI"
+git push origin main
+
+
+
+
+
+
+test 
+
+bbai@inf-org
+
+md12345678
+
+bdbd@inf-org
+
+md1234
 
 
 
