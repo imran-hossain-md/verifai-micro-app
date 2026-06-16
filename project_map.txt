@@ -1,0 +1,14 @@
+PROJECT STRUCTURE MAP: VerifAI Micro-Audit Tool
+==================================================
+
+ROOT: VerifAI Micro-Audit Tool/
+    └── db.ts
+    └── deno.json
+    └── Dockerfile
+    └── mapaerrun.txt
+    └── New Text Document.txt
+    └── project_map.txt
+    └── README.md
+    └── server.ts
+    ├── public/
+        └── index.html

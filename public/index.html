@@ -1,71 +1,408 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full bg-slate-950">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VerifAI Micro-Audit</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f9; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.05); width: 100%; max-width: 400px; }
-        h2 { margin-top: 0; color: #1a1a1a; font-size: 22px; border-bottom: 2px solid #eaeaea; padding-bottom: 10px; }
-        label { display: block; margin: 15px 0 5px; font-weight: 600; font-size: 14px; }
-        input, select { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
-        button { width: 100%; background: #0070f3; color: white; padding: 12px; border: none; border-radius: 6px; margin-top: 20px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
-        button:hover { background: #0051cb; }
-        .result-box { margin-top: 20px; padding: 15px; background: #f8f9fa; border-left: 4px solid #0070f3; border-radius: 4px; display: none; }
-    </style>
-</head>
-<body>
-
-<div class="card">
-    <h2>VerifAI Micro-Audit Tool</h2>
-    
-    <label>AI System Name</label>
-    <input type="text" id="systemName" placeholder="e.g., Nexus LLM">
-
-    <label>Model Classification</label>
-    <select id="modelType">
-        <option value="general">General Purpose AI (Chatbot)</option>
-        <option value="llm">Generative AI / Foundation Model</option>
-        <option value="recruitment">HR / Automated Recruitment</option>
-        <option value="biometric">Biometric Identification</option>
-    </select>
-
-    <button onclick="runAudit()">Run Compliance Audit</button>
-
-    <div class="result-box" id="resultBox">
-        <strong style="color: #0070f3;">Audit Output:</strong>
-        <p id="resultText" style="margin: 5px 0 0 0; font-size: 14px; line-height: 1.4;"></p>
-    </div>
-</div>
-
-<script>
-    async function runAudit() {
-        const systemName = document.getElementById('systemName').value;
-        const modelType = document.getElementById('modelType').value;
-        
-        if(!systemName) return alert("Please enter a system name");
-
-        // ব্যাকএন্ড এপিআই-তে ডেটা পাঠানো
-        const response = await fetch('/api/audit', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ systemName, modelType })
-        });
-
-        const data = await response.json();
-        
-        // ফলাফল স্ক্রিনে দেখানো
-        const resultBox = document.getElementById('resultBox');
-        const resultText = document.getElementById('resultText');
-        
-        resultText.innerHTML = `
-            <strong>System:</strong> ${data.systemName} <br>
-            <strong>Risk Score:</strong> ${data.riskScore}/100 <br>
-            <strong>Verdict:</strong> ${data.summary}
-        `;
-        resultBox.style.display = 'block';
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VerifAI Labs - Governance & Audit Portal</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#f0f9ff',
+              100: '#e0f2fe',
+              500: '#0ea5e9', // Deep Sky Blue
+              600: '#0284c7',
+              900: '#0c4a6e',
+            },
+            dark: {
+              card: '#0f172a',
+              bg: '#020617',
+              border: '#1e293b'
+            }
+          }
+        }
+      }
     }
-</script>
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .hidden-view { display: none !important; }
+  </style>
+</head>
+<body class="h-full text-slate-100 bg-dark-bg antialiased selection:bg-brand-500 selection:text-white">
+
+  <nav class="border-b border-dark-border bg-dark-card/50 backdrop-blur-md sticky top-0 z-50">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div class="flex h-16 justify-between items-center">
+        <div class="flex items-center gap-3">
+          <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-brand-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-brand-500/20">
+            <span class="font-bold text-white tracking-wider text-sm">V</span>
+          </div>
+          <div>
+            <span class="font-bold text-lg text-white tracking-tight">VerifAI<span class="text-brand-500 font-medium text-sm ml-1">Labs</span></span>
+          </div>
+        </div>
+        <div class="flex items-center gap-4">
+          <span id="nav-user-info" class="text-sm text-slate-400 hidden"></span>
+          <button id="btn-logout" onclick="handleLogout()" class="hidden text-xs font-semibold text-slate-400 hover:text-white border border-dark-border px-3 py-1.5 rounded-md transition-all">Secure Sign Out</button>
+        </div>
+      </div>
+    </div>
+  </nav>
+
+  <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
+    
+    <div id="view-loading" class="flex flex-col items-center justify-center py-20">
+      <div class="animate-spin rounded-full h-10 w-10 border-2 border-t-brand-500 border-dark-border mb-4"></div>
+      <p class="text-slate-400 text-sm tracking-wide">Syncing Security Handshake...</p>
+    </div>
+
+    <div id="view-landing" class="hidden-view max-w-md mx-auto mt-8 transition-all duration-300">
+      <div class="bg-dark-card border border-dark-border rounded-2xl p-8 shadow-2xl">
+        <div class="text-center mb-8">
+          <h2 id="auth-title" class="text-2xl font-bold tracking-tight text-white">Sign in to Enterprise Vault</h2>
+          <p id="auth-subtitle" class="text-sm text-slate-400 mt-2">Enter credentials to lease a secure compliance token.</p>
+        </div>
+
+        <div id="auth-alert" class="hidden p-3 rounded-lg text-xs font-medium mb-4 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"></div>
+
+        <form id="form-login" onsubmit="handleLogin(event)" class="space-y-5">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Corporate Email</label>
+            <input type="email" id="login-email" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-all text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Secure Password</label>
+            <input type="password" id="login-password" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-all text-sm">
+          </div>
+          <button type="submit" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-semibold py-3 px-4 rounded-lg transition-all text-sm shadow-lg shadow-brand-600/10">Authorize Session</button>
+          <p class="text-center text-xs text-slate-400 mt-4">New Organization? <a href="#" onclick="toggleAuthMode(true)" class="text-brand-500 hover:underline">Register Node</a></p>
+        </form>
+
+        <form id="form-register" onsubmit="handleRegister(event)" class="space-y-5 hidden-view">
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Officer Name</label>
+            <input type="text" id="reg-name" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 transition-all text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Corporate Email</label>
+            <input type="email" id="reg-email" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 transition-all text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Company Entity</label>
+            <input type="text" id="reg-company" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 transition-all text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Access Password</label>
+            <input type="password" id="reg-password" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 transition-all text-sm">
+          </div>
+          <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-4 rounded-lg transition-all text-sm shadow-lg shadow-emerald-600/10">Deploy New Node</button>
+          <p class="text-center text-xs text-slate-400 mt-4">Already registered? <a href="#" onclick="toggleAuthMode(false)" class="text-brand-500 hover:underline">Sign In</a></p>
+        </form>
+      </div>
+    </div>
+
+    <div id="view-checkout" class="hidden-view max-w-md mx-auto text-center mt-12">
+      <div class="bg-dark-card border border-dark-border rounded-2xl p-8 shadow-2xl relative overflow-hidden">
+        <div class="absolute top-0 right-0 h-24 w-24 bg-gradient-to-bl from-brand-500/10 to-transparent rounded-bl-full"></div>
+        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-500/10 text-brand-400 mb-4">💳</div>
+        <h2 class="text-xl font-bold text-white tracking-tight">Unlock AI Compliance Engine</h2>
+        <p class="text-slate-400 text-sm mt-2">Access the ISO 42001 & EU AI Act real-time algorithmic telemetry pipeline.</p>
+        <div class="my-6 bg-dark-bg border border-dark-border rounded-xl p-4">
+          <span class="text-xs text-slate-500 block uppercase tracking-wider font-semibold">One-Time Lease Fee</span>
+          <span class="text-3xl font-bold text-white mt-1">$99 <span class="text-sm font-medium text-slate-400">USD</span></span>
+        </div>
+        <button onclick="processPayment()" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-semibold py-3 px-4 rounded-lg transition-all text-sm shadow-md">Settle Ledger via Stripe Sandbox</button>
+      </div>
+    </div>
+
+    <div id="view-audit-form" class="hidden-view max-w-2xl mx-auto">
+      <div class="mb-8 border-b border-dark-border pb-6">
+        <h1 class="text-2xl font-bold tracking-tight text-white">Algorithmic Governance Audit</h1>
+        <p class="text-sm text-slate-400 mt-1">VerifAI Core Parameter System — Aligned with ISO 42001 & European AI Act.</p>
+      </div>
+      
+      <form onsubmit="handleAuditSubmit(event)" class="space-y-4">
+        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
+          <label class="block text-sm font-medium text-slate-200 mb-3">1. Model Bias Mitigation Framework</label>
+          <p class="text-xs text-slate-500 mb-4">Do you continuously document, trace, and audit demographic parity or bias mitigation protocols in dataset pipelines?</p>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q1" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Explicitly Documented (+20%)</label>
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q1" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> Deficit / Missing (0%)</label>
+          </div>
+        </div>
+        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
+          <label class="block text-sm font-medium text-slate-200 mb-3">2. Human-in-the-Loop (HITL) Interventions</label>
+          <p class="text-xs text-slate-500 mb-4">Is there an active operational guardrail allowing designated human overseers to immediately override or block AI model outputs?</p>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q2" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Guardrail Implemented (+20%)</label>
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q2" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> Autonomous No-Override (0%)</label>
+          </div>
+        </div>
+        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
+          <label class="block text-sm font-medium text-slate-200 mb-3">3. Training Data Privacy & Consent Scrubber</label>
+          <p class="text-xs text-slate-500 mb-4">Are training arrays and LLM fine-tuning weights explicitly scrubbed of personal identifiable info (PII) under GDPR parameters?</p>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q3" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Consent Compliant (+20%)</label>
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q3" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> Unfiltered Sync (0%)</label>
+          </div>
+        </div>
+        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
+          <label class="block text-sm font-medium text-slate-200 mb-3">4. Algorithmic Hallucination Log Tracking</label>
+          <p class="text-xs text-slate-500 mb-4">Does the production infrastructure maintain automated immutable logs of system failures, drift, or erroneous reasoning loops?</p>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q4" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Logging Operational (+20%)</label>
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q4" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> No Structural Trails (0%)</label>
+          </div>
+        </div>
+        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
+          <label class="block text-sm font-medium text-slate-200 mb-3">5. Cyber Resilience & Prompt Injection Barriers</label>
+          <p class="text-xs text-slate-500 mb-4">Are adversarial security vector mappings deployed to mitigate prompt hijacking, jailbreaks, or data extraction attacks?</p>
+          <div class="flex gap-4">
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q5" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Shielding Active (+20%)</label>
+            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q5" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> Vulnerable / Native (0%)</label>
+          </div>
+        </div>
+
+        <button type="submit" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-4 rounded-xl transition-all text-sm shadow-lg shadow-brand-600/20 tracking-wide uppercase">Commit Registry & Sync Score</button>
+      </form>
+    </div>
+
+    <div id="view-success" class="hidden-view max-w-md mx-auto text-center mt-12">
+      <div class="bg-dark-card border border-dark-border rounded-2xl p-8 shadow-2xl">
+        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400 mb-4 text-xl">✓</div>
+        <h1 class="text-2xl font-bold tracking-tight text-white">Audit Committed</h1>
+        <p class="text-sm text-slate-400 mt-1">Cryptographic matrix synced successfully.</p>
+        <div class="my-8 py-6 px-4 bg-dark-bg border border-dark-border rounded-xl">
+          <span class="text-xs text-slate-500 block uppercase tracking-wider font-semibold">Framework Alignment Score</span>
+          <span id="final-score-display" class="text-5xl font-extrabold text-brand-500 tracking-tight mt-2 block">0%</span>
+        </div>
+        <button onclick="checkAppStatus()" class="w-full bg-dark-border hover:bg-slate-800 text-white font-semibold py-3 px-4 rounded-lg transition-all text-sm">Run Another Analysis</button>
+      </div>
+    </div>
+
+    <div id="view-admin" class="hidden-view space-y-8">
+      <div class="border-b border-dark-border pb-6 flex justify-between items-end">
+        <div>
+          <h1 class="text-2xl font-bold tracking-tight text-white flex items-center gap-2">🔒 Infrastructure Telemetry Control <span class="text-xs bg-red-500/10 text-red-400 border border-red-500/20 font-mono font-medium px-2 py-0.5 rounded">ISO 27001</span></h1>
+          <p class="text-sm text-slate-400 mt-1">System Core Live Node Registry & Forensic Audit Logs</p>
+        </div>
+        <button onclick="checkAppStatus()" class="text-xs font-semibold bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-500 transition-all">Client Portal Fallback</button>
+      </div>
+
+      <div class="space-y-3">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-red-400 flex items-center gap-2"><span>●</span> Telemetry Audit Trail (A-12.4.1)</h2>
+        <div class="bg-dark-card border border-red-500/20 rounded-xl overflow-hidden shadow-xl">
+          <table class="w-full text-left border-collapse">
+            <thead>
+              <tr class="bg-red-950/20 border-b border-dark-border text-xs text-red-300 font-mono"><th class="p-4">Event Token</th><th class="p-4">Incident/Event Log</th><th class="p-4">Timestamp</th></tr>
+            </thead>
+            <tbody id="table-logs" class="divide-y divide-dark-border font-mono text-[11px] text-slate-300"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Client Registry Node</h2>
+        <div class="bg-dark-card border border-dark-border rounded-xl overflow-hidden shadow-xl">
+          <table class="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr class="bg-slate-900 border-b border-dark-border text-xs text-slate-400 uppercase tracking-wider"><th class="p-4">UID</th><th class="p-4">Entity/Client</th><th class="p-4">Corporate Email</th><th class="p-4">Settlement</th><th class="p-4">Engine Score</th></tr>
+            </thead>
+            <tbody id="table-clients" class="divide-y divide-dark-border text-xs text-slate-300"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    let isRegisterMode = false;
+
+    // ১. গ্লোবাল ভিউ রাউটার ম্যানেজার (SPA Route Switcher)
+    function switchView(viewId) {
+      ['view-loading', 'view-landing', 'view-checkout', 'view-audit-form', 'view-success', 'view-admin'].forEach(id => {
+        document.getElementById(id).classList.add('hidden-view');
+      });
+      document.getElementById(viewId).classList.remove('hidden-view');
+    }
+
+    // ২. সেশন ট্র্যাকিং ও অটো-ইনস্পেকশন গেট
+    async function checkAppStatus() {
+      try {
+        const res = await fetch("/api/session");
+        const data = await res.json();
+
+        if (data.authenticated) {
+          document.getElementById('btn-logout').classList.remove('hidden');
+          document.getElementById('nav-user-info').classList.remove('hidden');
+          document.getElementById('nav-user-info').innerText = `${data.user.name} (${data.user.company_name})`;
+
+          // যদি ইউজার অ্যাডমিন হয় এবং অ্যাডমিন ড্যাশবোর্ড দেখতে চায়
+          if (data.user.is_admin) {
+            loadAdminDashboard();
+            return;
+          }
+
+          // নরমাল ক্লায়েন্ট ফ্লো ভেরিফিকেশন
+          if (data.user.payment_status === 'pending') {
+            switchView('view-checkout');
+          } else {
+            switchView('view-audit-form');
+          }
+        } else {
+          document.getElementById('btn-logout').classList.add('hidden');
+          document.getElementById('nav-user-info').classList.add('hidden');
+          switchView('view-landing');
+        }
+      } catch (err) {
+        console.error("Core Engine Connection Reset:", err);
+      }
+    }
+
+    // ৩. রেজিস্টার এবং লগইন মোড টগলার
+    function toggleAuthMode(regMode) {
+      isRegisterMode = regMode;
+      document.getElementById('auth-title').innerText = regMode ? "Register Organization" : "Sign in to Enterprise Vault";
+      document.getElementById('auth-subtitle').innerText = regMode ? "Deploy a localized GRC testing architecture." : "Enter credentials to lease a secure compliance token.";
+      if (regMode) {
+        document.getElementById('form-login').classList.add('hidden-view');
+        document.getElementById('form-register').classList.remove('hidden-view');
+      } else {
+        document.getElementById('form-register').classList.add('hidden-view');
+        document.getElementById('form-login').classList.remove('hidden-view');
+      }
+    }
+
+    // ৪. সাবমিট অ্যাকশন: সাইন ইন
+    async function handleLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (data.success) {
+        checkAppStatus();
+      } else {
+        alert(data.error);
+      }
+    }
+
+    // ৫. সাবমিট অ্যাকশন: রেজিস্ট্রেশন
+    async function handleRegister(e) {
+      e.preventDefault();
+      const name = document.getElementById('reg-name').value;
+      const email = document.getElementById('reg-email').value;
+      const company_name = document.getElementById('reg-company').value;
+      const password = document.getElementById('reg-password').value;
+
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, company_name, password })
+      });
+      const data = await res.json();
+      if (data.success) {
+        const alertBox = document.getElementById('auth-alert');
+        alertBox.innerText = "System Synced. Please complete authentication.";
+        alertBox.classList.remove('hidden');
+        toggleAuthMode(false);
+      } else {
+        alert(data.error);
+      }
+    }
+
+    // ৬. সাবমিট অ্যাকশন: স্ট্রাইপ পেমেন্ট গেটওয়ে সিমুলেশন
+    async function processPayment() {
+      const res = await fetch("/api/payment/checkout", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        checkAppStatus();
+      }
+    }
+
+    // ৭. সাবমিট অ্যাকশন: ৫-প্যারামিটার অডিট ক্যালকুলেশন সাবমিশন
+    async function handleAuditSubmit(e) {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const responses = {
+        q1: formData.get('q1'),
+        q2: formData.get('q2'),
+        q3: formData.get('q3'),
+        q4: formData.get('q4'),
+        q5: formData.get('q5')
+      };
+
+      const res = await fetch("/api/audit/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(responses)
+      });
+      const data = await res.json();
+      if (data.success) {
+        document.getElementById('final-score-display').innerText = `${data.calculated_score}%`;
+        switchView('view-success');
+      }
+    }
+
+    // ৮. লোড অ্যাকশন: অ্যাডমিন ড্যাশবোর্ড ফরেনসিক ডেটা
+    async function loadAdminDashboard() {
+      const res = await fetch("/api/admin/dashboard-telemetry");
+      if (res.status === 403) {
+        switchView('view-audit-form');
+        return;
+      }
+      const data = await res.json();
+      if (data.success) {
+        // রেন্ডার সিকিউরিটি লগস
+        const logBody = document.getElementById('table-logs');
+        logBody.innerHTML = data.metrics.telemetry_logs.map(log => `
+          <tr class="hover:bg-slate-900/40">
+            <td class="p-4 text-red-400 font-semibold">${log.event_type}</td>
+            <td class="p-4">${log.description}</td>
+            <td class="p-4 text-slate-500">${new Date(log.timestamp).toLocaleString()}</td>
+          </tr>
+        `).join('') || `<tr><td colspan="3" class="p-4 text-center text-slate-600">No telemetry traces logged.</td></tr>`;
+
+        // রেন্ডার অ্যাক্টিভ ক্লায়েন্টস
+        const clientBody = document.getElementById('table-clients');
+        clientBody.innerHTML = data.metrics.active_registry.map(client => `
+          <tr class="hover:bg-slate-900/60 border-b border-dark-border">
+            <td class="p-4 font-mono text-slate-500">#UID-${client.id}</td>
+            <td class="p-4 font-semibold text-white">${client.name} <span class="text-xs font-normal text-slate-500">(${client.company_name})</span></td>
+            <td class="p-4 text-slate-400">${client.email}</td>
+            <td class="p-4"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${client.payment_status === 'paid' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}">${client.payment_status.toUpperCase()}</span></td>
+            <td class="p-4 font-bold text-brand-400">${client.score !== null ? client.score + '%' : '<span class="text-slate-600 font-normal">Pending</span>'}</td>
+          </tr>
+        `).join('');
+
+        switchView('view-admin');
+      }
+    }
+
+    // ৯. সেশন সিকিউর ইরেজার (লগআউট)
+    async function handleLogout() {
+      const res = await fetch("/api/auth/logout", { method: "POST" });
+      const data = await res.json();
+      if (data.success) {
+        checkAppStatus();
+      }
+    }
+
+    // 🚀 বুটস্ট্র্যাপ ইনিশিয়ালাইজেশন
+    window.onload = checkAppStatus;
+  </script>
 </body>
 </html>

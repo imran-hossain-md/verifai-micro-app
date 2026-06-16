@@ -1,22 +1,18 @@
+// server.ts - VerifAI Core JSON API Engine
 import { Application, Router } from "https://deno.land/x/oak@v12.6.1/mod.ts";
-import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
 import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
-
-// 🌍 ক্লাউড ডাটাবেজ কানেকশন কনফিগারেশন (Render PostgreSQL Singapore)
-const DATABASE_URL = Deno.env.get("DATABASE_URL") || "your_postgresql_connection_string_here";
-const dbClient = new Client(DATABASE_URL);
-await dbClient.connect();
+import dbClient from "./db.ts"; // আপনার মডিউলার ডাটাবেজ ক্লায়েন্ট এক্সপোর্ট
 
 const app = new Application();
 const router = new Router();
 
-// কুকি সিকিউরিটির জন্য এন্টারপ্রাইজ সাইনিং কি (Signing Keys)
+// কুকি সিকিউরিটির জন্য সাইনিং কি
 app.keys = ["SUPER_SECRET_AUDIT_KEY_2026_ISR"];
 
-// 🛠️ ISO কমপ্লায়েন্স ডাটাবেজ টেবিল ইনিশিয়ালাইজেশন ও অটো-মাইগ্রেশন
+// 🛠️ VerifAI ল্যাবস ডাটাবেজ স্কিমা অটো-মাইগ্রেশন ও সিঙ্ক ম্যানেজার
 async function initDatabase() {
   try {
-    // ১. ইউজার টেবিল ভেরিফিকেশন
+    // ১. ইউজার টেবিল এবং অ্যাডমিন রোল ট্র্যাকিং
     await dbClient.queryArray(`
       CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
@@ -24,19 +20,17 @@ async function initDatabase() {
         email VARCHAR(150) UNIQUE NOT NULL,
         password TEXT NOT NULL,
         company_name VARCHAR(150),
-        payment_status VARCHAR(50) DEFAULT 'pending'
+        payment_status VARCHAR(50) DEFAULT 'pending',
+        is_admin BOOLEAN DEFAULT FALSE
       );
     `);
 
-    // 🔥 [ISO মাইগ্রেশন লজিক] পাসওয়ার্ড রিসেটের জন্য কলাম দুটি অটো-ক্রিয়েট করার মেকানিজম
-    await dbClient.queryArray(`
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);
-    `);
-    await dbClient.queryArray(`
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP;
-    `);
+    // পাসওয়ার্ড রিসেটের এন্টারপ্রাইজ কলাম ভেরিফিকেশন
+    await dbClient.queryArray(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);`);
+    await dbClient.queryArray(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP;`);
+    await dbClient.queryArray(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;`);
 
-    // ২. অডিট টেবিল ভেরিফিকেশন
+    // ২. অডিট রেজাল্ট ও র-রেসপন্স স্টোরেজ টেবিল
     await dbClient.queryArray(`
       CREATE TABLE IF NOT EXISTS audits (
         id SERIAL PRIMARY KEY,
@@ -47,7 +41,7 @@ async function initDatabase() {
       );
     `);
 
-    // ৩. ISO 27001 (A-12.4.1) সিকিউরিটি লগ টেবিল ভেরিফিকেশন
+    // ৩. ISO 27001 (A-12.4.1) সিকিউরিটি লগ টেবিল
     await dbClient.queryArray(`
       CREATE TABLE IF NOT EXISTS system_logs (
         id SERIAL PRIMARY KEY,
@@ -57,124 +51,88 @@ async function initDatabase() {
       );
     `);
 
-    console.log("📁 ISO Database Schema Verified & Synced Successfully.");
+    console.log("📁 VerifAI Systems Node: Database Architecture Synced.");
   } catch (error) {
-    console.error("❌ Error synchronizing database schema:", error);
+    console.error("❌ Schema Sync Fail:", error);
   }
 }
 await initDatabase();
 
-// 🛡️ হেল্পার ফাংশন: ISO সিকিউরিটি ইভেন্ট লগিং
+// 🛡️ ISO সিকিউরিটি ইভেন্ট লগিং ইউটিলস
 async function logSecurityEvent(eventType: string, description: string) {
-  await dbClient.queryArray(
-    "INSERT INTO system_logs (event_type, description) VALUES ($1, $2)",
-    [eventType, description]
-  );
+  try {
+    await dbClient.queryArray(
+      "INSERT INTO system_logs (event_type, description) VALUES ($1, $2)",
+      [eventType, description]
+    );
+  } catch (err) {
+    console.error("Log Engine Failed:", err);
+  }
 }
 
 // -------------------------------------------------------------------------
-// 🏠 ১. হোম ল্যান্ডিং পেজ রাউট
+// 🔐 সেশন ও অথেনটিকেশন মিডলওয়্যার (Security Gate)
 // -------------------------------------------------------------------------
-router.get("/", (ctx) => {
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <html>
-      <head>
-        <title>VerifAI Micro-SaaS Portal</title>
-        <style>
-          body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #f8fafc; max-width: 800px; margin: 100px auto; text-align: center; }
-          .card { background: #1e293b; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); border: 1px solid #334155; }
-          h1 { color: #38bdf8; font-size: 2.5rem; margin-bottom: 10px; }
-          p { color: #94a3b8; font-size: 1.1rem; }
-          .btn { padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 10px; display: inline-block; transition: all 0.3s; }
-          .btn-primary { background: #0284c7; color: white; }
-          .btn-success { background: #059669; color: white; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h1>VerifAI Audit Portal</h1>
-          <p>Enterprise-grade AI Trust, Risk & Governance Compliance Engine</p>
-          <hr style="border: 0; height: 1px; background: #334155; margin: 30px 0;">
-          <a href="/register" class="btn btn-primary">Client Sign Up</a>
-          <a href="/login" class="btn btn-success">Client Login</a>
-          <a href="/admin-dashboard" style="color: #64748b; display: block; margin-top: 20px; text-decoration: none; font-size: 0.9rem;">🔒 Infrastructure Admin Access</a>
-        </div>
-      </body>
-    </html>
-  `;
+async function getAuthUser(ctx: any) {
+  const userId = await ctx.cookies.get("auth_user_id", { signed: true });
+  if (!userId) return null;
+  
+  const userRes = await dbClient.queryObject<any>(
+    "SELECT id, name, email, company_name, payment_status, is_admin FROM users WHERE id = $1", 
+    [userId]
+  );
+  return userRes.rows[0] || null;
+}
+
+// -------------------------------------------------------------------------
+// 📡 JSON API ROUTING (Clean Architecture)
+// -------------------------------------------------------------------------
+
+// ১. গ্লোবাল স্টেট চেক এপিআই (ফ্রন্টএন্ড লোড হওয়ার সাথে সাথে এটি কল করবে)
+router.get("/api/session", async (ctx) => {
+  const user = await getAuthUser(ctx);
+  ctx.response.body = { authenticated: !!user, user: user || null };
 });
 
-// -------------------------------------------------------------------------
-// 📝 ২. ক্লায়েন্ট রেজিস্ট্রেশন (GET & POST)
-// -------------------------------------------------------------------------
-router.get("/register", (ctx) => {
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <body style="font-family: Arial; background: #0f172a; color: #f8fafc; max-width: 400px; margin: 80px auto; padding: 30px; background: #1e293b; border-radius: 8px; border: 1px solid #334155;">
-      <h2 style="color: #38bdf8; margin-bottom: 20px;">Client Registration</h2>
-      <form action="/register" method="POST" style="display: flex; flex-direction: column; gap: 15px;">
-        <input type="text" name="name" placeholder="Full Name" required style="padding: 12px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px;">
-        <input type="email" name="email" placeholder="Email Address" required style="padding: 12px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px;">
-        <input type="text" name="company_name" placeholder="Company Name" required style="padding: 12px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px;">
-        <input type="password" name="password" placeholder="Password" required style="padding: 12px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px;">
-        <button type="submit" style="padding: 12px; background: #0284c7; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">Sign Up & Proceed</button>
-      </form>
-    </body>
-  `;
-});
-
-router.post("/register", async (ctx) => {
-  const body = ctx.request.body({ type: "form" });
-  const value = await body.value;
-  const name = value.get("name");
-  const email = value.get("email");
-  const company_name = value.get("company_name");
-  const password = value.get("password") || "";
-
+// ২. ক্লায়েন্ট রেজিস্ট্রেশন (POST)
+router.post("/api/auth/register", async (ctx) => {
   try {
+    const body = ctx.request.body({ type: "json" });
+    const { name, email, company_name, password } = await body.value;
+
+    if (!name || !email || !password) {
+      ctx.response.status = 400;
+      ctx.response.body = { success: false, error: "Missing required compliance fields." };
+      return;
+    }
+
     const salt = await bcrypt.genSalt(8);
     const hashedPassword = await bcrypt.hash(password, salt);
 
+    // সিস্টেমের ১ম ইউজারকে অটো-অ্যাডমিন করার সেফগার্ড মেকানিজম
+    const countCheck = await dbClient.queryArray("SELECT COUNT(*) FROM users");
+    const isFirstUser = parseInt(countCheck.rows[0][0] as string) === 0;
+
     await dbClient.queryArray(
-      `INSERT INTO users (name, email, company_name, password) VALUES ($1, $2, $3, $4)`,
-      [name, email, company_name, hashedPassword]
+      `INSERT INTO users (name, email, company_name, password, is_admin) VALUES ($1, $2, $3, $4, $5)`,
+      [name, email, company_name || "N/A", hashedPassword, isFirstUser]
     );
-    ctx.response.redirect("/login?msg=Registration successful! Please login.");
-  } catch (_error) {
-    ctx.response.body = "❌ Error: Registration failed! Email might already exist. <a href='/register'>Try again</a>";
+
+    ctx.response.status = 201;
+    ctx.response.body = { success: true, message: "Registration successful." };
+  } catch (error) {
+    ctx.response.status = 400;
+    ctx.response.body = { success: false, error: "Email already exists or database constraint violation." };
   }
 });
 
-// -------------------------------------------------------------------------
-// 🔑 ৩. ক্লায়েন্ট সিকিউর লগইন (GET & POST)
-// -------------------------------------------------------------------------
-router.get("/login", (ctx) => {
-  const params = ctx.request.url.searchParams;
-  const msg = params.get("msg") || "";
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <body style="font-family: Arial; background: #0f172a; color: #f8fafc; max-width: 400px; margin: 80px auto; padding: 30px; background: #1e293b; border-radius: 8px; border: 1px solid #334155;">
-      <h2 style="color: #059669; margin-bottom: 20px;">Client Login</h2>
-      <p style="color: #34d399;">${msg}</p>
-      <form action="/login" method="POST" style="display: flex; flex-direction: column; gap: 15px;">
-        <input type="email" name="email" placeholder="Email Address" required style="padding: 12px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px;">
-        <input type="password" name="password" placeholder="Password" required style="padding: 12px; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 4px;">
-        <button type="submit" style="padding: 12px; background: #059669; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;">Secure Login</button>
-      </form>
-      <p style="margin-top: 20px; text-align: center;"><a href="/forgot-password" style="color: #38bdf8; text-decoration: none; font-size: 0.9rem;">Forgot Password?</a></p>
-    </body>
-  `;
-});
+// ৩. ক্লায়েন্ট সিকিউর লগইন (POST)
+router.post("/api/auth/login", async (ctx) => {
+  const body = ctx.request.body({ type: "json" });
+  const { email, password } = await body.value;
 
-router.post("/login", async (ctx) => {
-  const body = ctx.request.body({ type: "form" });
-  const value = await body.value;
-  const email = value.get("email");
-  const password = value.get("password") || "";
-
-  const result = await dbClient.queryObject<{ id: number; password: string; payment_status: string }>(
-    `SELECT id, password, payment_status FROM users WHERE email = $1`, [email]
+  const result = await dbClient.queryObject<any>(
+    `SELECT id, password, payment_status, is_admin FROM users WHERE email = $1`, [email]
   );
 
   if (result.rows.length > 0) {
@@ -182,133 +140,74 @@ router.post("/login", async (ctx) => {
     const isPasswordMatch = await bcrypt.compare(password, user.password);
     
     if (isPasswordMatch) {
-      await ctx.cookies.set("auth_user_id", String(user.id), { httpOnly: true, signed: true });
-      if (user.payment_status === "pending") {
-        ctx.response.redirect("/checkout");
-      } else {
-        ctx.response.redirect("/audit-form");
-      }
+      await ctx.cookies.set("auth_user_id", String(user.id), { 
+        httpOnly: true, 
+        signed: true,
+        sameSite: "lax"
+      });
+
+      ctx.response.body = { 
+        success: true, 
+        payment_status: user.payment_status, 
+        is_admin: user.is_admin 
+      };
       return;
     }
   }
-  ctx.response.body = "❌ Invalid credentials! <a href='/login'>Try again</a>";
+
+  ctx.response.status = 401;
+  ctx.response.body = { success: false, error: "Invalid cryptographic credentials." };
 });
 
-// -------------------------------------------------------------------------
-// 💳 ৪. পেমেন্ট গেটওয়ে সিমুলেশন (GET & POST)
-// -------------------------------------------------------------------------
-router.get("/checkout", async (ctx) => {
-  const userId = await ctx.cookies.get("auth_user_id", { signed: true });
-  if (!userId) { ctx.response.redirect("/login"); return; }
+// ৪. পেমেন্ট গেটওয়ে সিমুলেশন (POST)
+router.post("/api/payment/checkout", async (ctx) => {
+  const user = await getAuthUser(ctx);
+  if (!user) { ctx.response.status = 401; return; }
 
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <body style="font-family: Arial; text-align: center; background: #0f172a; color: #f8fafc; max-width: 500px; margin: 80px auto; padding: 40px; background: #1e293b; border-radius: 12px; border: 1px solid #334155;">
-      <h2 style="color: #38bdf8;">💳 Gateway Payment Integration</h2>
-      <p style="font-size: 1.2rem; margin: 20px 0;">Secure Enterprise Audit Fee: <b style="color: #34d399;">$99 USD</b></p>
-      <form action="/pay-success" method="POST">
-        <button type="submit" style="padding: 15px 30px; background: #6366f1; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; font-weight: bold; width: 100%;">Process Payment via Stripe Sandbox</button>
-      </form>
-    </body>
-  `;
+  await dbClient.queryArray(`UPDATE users SET payment_status = 'paid' WHERE id = $1`, [user.id]);
+  await logSecurityEvent("BILLING_SUCCESS", `User UID ${user.id} successfully completed Sandbox settlement.`);
+  
+  ctx.response.body = { success: true, message: "Payment processed successfully." };
 });
 
-router.post("/pay-success", async (ctx) => {
-  const userId = await ctx.cookies.get("auth_user_id", { signed: true });
-  if (!userId) { ctx.response.status = 403; return; }
+// ৫. ৫-প্যারামিটার অডিট ইঞ্জিন সাবমিশন (POST)
+router.post("/api/audit/submit", async (ctx) => {
+  const user = await getAuthUser(ctx);
+  if (!user) { ctx.response.status = 401; return; }
+  if (user.payment_status !== "paid") {
+    ctx.response.status = 402;
+    ctx.response.body = { success: false, error: "Payment required to unlock GRC engine." };
+    return;
+  }
 
-  await dbClient.queryArray(`UPDATE users SET payment_status = 'paid' WHERE id = $1`, [userId]);
-  ctx.response.redirect("/audit-form");
-});
+  const body = ctx.request.body({ type: "json" });
+  const responses = await body.value; // { q1: "yes", q2: "no", q3: "yes", q4: "yes", q5: "no" }
 
-// -------------------------------------------------------------------------
-// 📋 ৫. অডিট ফর্ম এবং সাবমিশন হ্যান্ডলিং (GET & POST)
-// -------------------------------------------------------------------------
-router.get("/audit-form", async (ctx) => {
-  const userId = await ctx.cookies.get("auth_user_id", { signed: true });
-  if (!userId) { ctx.response.redirect("/login"); return; }
-
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <body style="font-family: Arial; background: #0f172a; color: #f8fafc; max-width: 650px; margin: 40px auto; padding: 30px; background: #1e293b; border-radius: 12px; border: 1px solid #334155;">
-      <h2 style="color: #38bdf8; margin-bottom: 5px;">📋 VerifAI Enterprise Audit Checklist</h2>
-      <p style="color: #94a3b8; margin-bottom: 25px;">ISO 42001 & EU AI Act Algorithmic Compliance Parameters</p>
-      <form action="/submit-audit" method="POST" style="display: flex; flex-direction: column; gap: 25px;">
-        <div style="background: #0f172a; padding: 15px; border-radius: 6px;">
-          <label style="display:block; margin-bottom: 10px;"><b>1. Do you document model bias mitigation steps?</b></label>
-          <input type="radio" name="q1" value="yes" required> Yes (Score 50) &nbsp;&nbsp;
-          <input type="radio" name="q1" value="no"> No (Score 0)
-        </div>
-        <div style="background: #0f172a; padding: 15px; border-radius: 6px;">
-          <label style="display:block; margin-bottom: 10px;"><b>2. Is there automated human-in-the-loop oversight?</b></label>
-          <input type="radio" name="q2" value="yes" required> Yes (Score 50) &nbsp;&nbsp;
-          <input type="radio" name="q2" value="no"> No (Score 0)
-        </div>
-        <button type="submit" style="padding: 14px; background: #0284c7; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1rem;">Submit & Sync Governance Logs</button>
-      </form>
-    </body>
-  `;
-});
-
-router.post("/submit-audit", async (ctx) => {
-  const userId = await ctx.cookies.get("auth_user_id", { signed: true });
-  if (!userId) { ctx.response.status = 403; return; }
-
-  const body = ctx.request.body({ type: "form" });
-  const value = await body.value;
-  const q1 = value.get("q1");
-  const q2 = value.get("q2");
-
+  // 📈 ৫টি কোর স্ট্র্যাটেজিক অডিট প্রশ্ন ও ২০% ওয়েটেজ লজিক
   let score = 0;
-  if (q1 === "yes") score += 50;
-  if (q2 === "yes") score += 50;
+  const questions = ["q1", "q2", "q3", "q4", "q5"];
+  questions.forEach((q) => {
+    if (responses[q] === "yes") score += 20;
+  });
 
-  const responses = JSON.stringify({ q1, q2 });
-  await dbClient.queryArray(`INSERT INTO audits (user_id, score, responses) VALUES ($1, $2, $3)`, [userId, score, responses]);
-
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <body style="font-family: Arial; text-align: center; background: #0f172a; color: #f8fafc; margin-top: 100px;">
-      <h1 style="color: #34d399;">🎉 Governance Audit Completed!</h1>
-      <h3>Compliance Framework Score: <span style="color: #38bdf8;">${score}%</span></h3>
-      <a href="/logout" style="padding: 10px 20px; background: #334155; color: white; text-decoration: none; border-radius: 5px; display:inline-block; margin-top:20px;">Logout Securely</a>
-    </body>
-  `;
-});
-
-// -------------------------------------------------------------------------
-// 🔒 ৬. পাসওয়ার্ড ভুলে গেলে টোকেন জেনারেশন রাউট (Forgot Password - GET & POST)
-// -------------------------------------------------------------------------
-router.get("/forgot-password", (ctx) => {
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <html>
-      <body style="font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 50px; text-align: center;">
-        <div style="max-width: 400px; margin: 0 auto; background: #1e293b; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
-          <h2 style="color: #38bdf8;">🔒 Password Recovery</h2>
-          <p style="color: #94a3b8; font-size: 0.9rem;">Enter your corporate email to generate an ISO-compliant secure reset token.</p>
-          <form action="/forgot-password" method="POST" style="margin-top: 20px;">
-            <input type="email" name="email" placeholder="Corporate Email" required style="width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;"><br>
-            <button type="submit" style="width: 100%; padding: 10px; background: #38bdf8; color: #0f172a; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">Generate Secure Link</button>
-          </form>
-          <p style="margin-top: 15px;"><a href="/login" style="color: #64748b; text-decoration: none; font-size: 0.85rem;">Back to Login</a></p>
-        </div>
-      </body>
-    </html>
-  `;
-});
-
-router.post("/forgot-password", async (ctx) => {
-  const body = ctx.request.body({ type: "form" });
-  const value = await body.value;
-  const email = value.get("email");
-
-  const userRes = await dbClient.queryObject<{ id: number; name: string }>(
-    "SELECT id, name FROM users WHERE email = $1", [email]
+  await dbClient.queryArray(
+    `INSERT INTO audits (user_id, score, responses) VALUES ($1, $2, $3)`, 
+    [user.id, score, JSON.stringify(responses)]
   );
 
+  ctx.response.body = { success: true, calculated_score: score };
+});
+
+// ৬. ফরগট পাসওয়ার্ড টোকেন জেনারেটর (POST)
+router.post("/api/auth/forgot-password", async (ctx) => {
+  const body = ctx.request.body({ type: "json" });
+  const { email } = await body.value;
+
+  const userRes = await dbClient.queryObject<any>("SELECT id FROM users WHERE email = $1", [email]);
+
   if (userRes.rows.length === 0) {
-    ctx.response.body = "❌ Email address not found in our secure registry. <a href='/forgot-password'>Try again</a>";
+    ctx.response.status = 404;
+    ctx.response.body = { success: false, error: "Registry entry not found." };
     return;
   }
 
@@ -321,179 +220,112 @@ router.post("/forgot-password", async (ctx) => {
     [token, expires, user.id]
   );
 
-  await logSecurityEvent("PASSWORD_RESET_REQUEST", `Secure reset token generated for UID ${user.id}`);
+  await logSecurityEvent("PASSWORD_RESET_REQUEST", `Secure token dispatched for UID ${user.id}`);
 
-  const resetLink = `${ctx.request.url.origin}/reset-password?token=${token}`;
-
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <html>
-      <body style="font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 50px; text-align: center;">
-        <div style="max-width: 500px; margin: 0 auto; background: #1e293b; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3); border-top: 4px solid #34d399;">
-          <h3 style="color: #34d399;">🔑 Secure Reset Link Generated Successfully</h3>
-          <p style="color: #94a3b8; font-size: 0.9rem; text-align: left;">ISO Compliance Note: This link is unique, cryptographically secure, and will strictly expire in 15 minutes.</p>
-          <div style="background: #0f172a; padding: 15px; border-radius: 4px; word-break: break-all; margin: 20px 0; border: 1px solid #334155;">
-            <a href="${resetLink}" style="color: #38bdf8; font-weight: bold; font-family: monospace;">Click Here to Reset Password</a>
-          </div>
-        </div>
-      </body>
-    </html>
-  `;
+  // ফ্রন্টএন্ড যাতে ইউজারকে লিংকটা শো করতে পারে
+  ctx.response.body = { 
+    success: true, 
+    reset_token: token,
+    expires_in_minutes: 15 
+  };
 });
 
-// -------------------------------------------------------------------------
-// 🔒 ৭. পাসওয়ার্ড রিসেট সাবমিশন অ্যাকশন (Reset Password - GET & POST)
-// -------------------------------------------------------------------------
-router.get("/reset-password", async (ctx) => {
-  const token = ctx.request.url.searchParams.get("token");
-  if (!token) { ctx.response.body = "❌ Invalid Request: Secure token missing."; return; }
+// ৭. পাসওয়ার্ড রিসেট এক্সিকিউশন (POST)
+router.post("/api/auth/reset-password", async (ctx) => {
+  const body = ctx.request.body({ type: "json" });
+  const { token, new_password } = await body.value;
 
-  const userRes = await dbClient.queryObject<{ id: number; reset_token_expires: Date }>(
+  const userRes = await dbClient.queryObject<any>(
     "SELECT id, reset_token_expires FROM users WHERE reset_token = $1", [token]
   );
 
-  if (userRes.rows.length === 0) { ctx.response.body = "❌ Invalid or expired token link."; return; }
-
-  const user = userRes.rows[0];
-  if (new Date() > new Date(user.reset_token_expires)) {
-    ctx.response.body = "❌ Access Denied: Secure token has expired (15-min limit reached).";
+  if (userRes.rows.length === 0) {
+    ctx.response.status = 400;
+    ctx.response.body = { success: false, error: "Invalid or corrupt security token." };
     return;
   }
 
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <html>
-      <body style="font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 50px; text-align: center;">
-        <div style="max-width: 400px; margin: 0 auto; background: #1e293b; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
-          <h2 style="color: #38bdf8;">🔄 Create New Password</h2>
-          <form action="/reset-password" method="POST" style="margin-top: 20px;">
-            <input type="hidden" name="token" value="${token}">
-            <input type="password" name="password" placeholder="Enter New Secure Password" required style="width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;"><br>
-            <button type="submit" style="width: 100%; padding: 10px; background: #34d399; color: #0f172a; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">Update Secure Password</button>
-          </form>
-        </div>
-      </body>
-    </html>
-  `;
-});
-
-router.post("/reset-password", async (ctx) => {
-  const body = ctx.request.body({ type: "form" });
-  const value = await body.value;
-  const token = value.get("token");
-  const newPassword = value.get("password") || "";
-
-  const userRes = await dbClient.queryObject<{ id: number; reset_token_expires: Date }>(
-    "SELECT id, reset_token_expires FROM users WHERE reset_token = $1", [token]
-  );
-
-  if (userRes.rows.length === 0) { ctx.response.body = "❌ Token verification failed."; return; }
-
   const user = userRes.rows[0];
-  if (new Date() > new Date(user.reset_token_expires)) { ctx.response.body = "❌ Token expired."; return; }
+  if (new Date() > new Date(user.reset_token_expires)) {
+    ctx.response.status = 400;
+    ctx.response.body = { success: false, error: "Token expired. Request a new validation lease." };
+    return;
+  }
 
-  const hashedPassword = await bcrypt.hash(newPassword);
-
+  const hashedPassword = await bcrypt.hash(new_password);
   await dbClient.queryArray(
     "UPDATE users SET password = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2",
     [hashedPassword, user.id]
   );
 
-  await logSecurityEvent("PASSWORD_CHANGE_SUCCESS", `Password updated via secure reset token for UID ${user.id}`);
-
-  ctx.response.type = "text/html";
-  ctx.response.body = `
-    <html>
-      <body style="font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 50px; text-align: center;">
-        <div style="max-width: 400px; margin: 0 auto; background: #1e293b; padding: 30px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
-          <h3 style="color: #34d399;">🎉 Password Updated Successfully</h3>
-          <p style="color: #94a3b8; font-size: 0.9rem;">Your cryptographic hash has been securely committed to Cloud Cluster.</p>
-          <a href="/login" style="display: inline-block; margin-top: 15px; padding: 10px 20px; background: #38bdf8; color: #0f172a; text-decoration: none; border-radius: 4px; font-weight: bold;">Login Now</a>
-        </div>
-      </body>
-    </html>
-  `;
+  await logSecurityEvent("PASSWORD_CHANGE_SUCCESS", `Cryptographic hash rotation completed for UID ${user.id}`);
+  ctx.response.body = { success: true, message: "Password updated via fallback token." };
 });
 
-// -------------------------------------------------------------------------
-// 📊 ৮. প্রফেশনাল কন্ট্রোল প্যানেল ও ইনফ্রাস্ট্রাকচার ড্যাশবোর্ড (With ISO Logs)
-// -------------------------------------------------------------------------
-router.get("/admin-dashboard", async (ctx) => {
+// 📊 ৮. ইনফ্রাস্ট্রাকচার ড্যাশবোর্ড ডেটা এপিআই (🔒 সিকিউরিটি লকিং গেটওয়ে)
+router.get("/api/admin/dashboard-telemetry", async (ctx) => {
+  const user = await getAuthUser(ctx);
+  
+  // ⛔ স্ট্রাকচারাল গেটকীপার: ইউজার লগড-ইন না থাকলে বা admin ফ্ল্যাগ মিথ্যা হলে রিফিউজ
+  if (!user || user.is_admin !== true) {
+    ctx.response.status = 403;
+    ctx.response.body = { success: false, error: "Access Denied: Infrastructure Clearance Required." };
+    return;
+  }
+
   try {
-    const mainQuery = `
+    const mainResult = await dbClient.queryObject<any>(`
       SELECT DISTINCT ON (u.id) u.id, u.name, u.email, u.company_name, u.payment_status, a.score, a.created_at 
       FROM users u LEFT JOIN audits a ON u.id = a.user_id ORDER BY u.id DESC, a.created_at DESC
-    `;
-    const mainResult = await dbClient.queryObject<any>(mainQuery);
+    `);
 
-    const historyQuery = `
+    const historyResult = await dbClient.queryObject<any>(`
       SELECT a.id as audit_id, u.name, u.company_name, a.score, a.created_at FROM audits a
       JOIN users u ON a.user_id = u.id ORDER BY a.created_at DESC
-    `;
-    const historyResult = await dbClient.queryObject<any>(historyQuery);
+    `);
 
-    const logQuery = "SELECT id, event_type, description, timestamp FROM system_logs ORDER BY timestamp DESC LIMIT 5";
-    const logResult = await dbClient.queryObject<any>(logQuery);
+    const logResult = await dbClient.queryObject<any>(
+      "SELECT id, event_type, description, timestamp FROM system_logs ORDER BY timestamp DESC LIMIT 10"
+    );
 
-    let mainRowsHtml = "";
-    mainResult.rows.forEach((row: any) => {
-      mainRowsHtml += `<tr style="border-bottom: 1px solid #334155;"><td style="padding:12px;">${row.id}</td><td style="padding:12px; font-weight:bold; color:#fff;">${row.name}</td><td style="padding:12px; color:#94a3b8;">${row.email}</td><td style="padding:12px; color:#94a3b8;">${row.company_name || 'N/A'}</td><td style="padding:12px;"><span style="background:${row.payment_status==='paid'?'#065f46':'#991b1b'}; color:white; padding:4px 8px; border-radius:4px;">${row.payment_status.toUpperCase()}</span></td><td style="padding:12px; color:#38bdf8; font-weight:bold;">${row.score !== null ? row.score + '%' : 'No Audit'}</td><td style="padding:12px; color:#64748b;">${row.created_at ? new Date(row.created_at).toLocaleString() : 'Pending'}</td></tr>`;
-    });
-
-    let historyRowsHtml = "";
-    historyResult.rows.forEach((row: any) => {
-      historyRowsHtml += `<tr style="border-bottom: 1px solid #1e293b;"><td style="padding:10px; color:#64748b;">#AUD-${row.audit_id}</td><td style="padding:10px;">${row.name} (${row.company_name})</td><td style="padding:10px; color:#34d399; font-weight:bold;">${row.score}%</td><td style="padding:10px; color:#64748b;">${new Date(row.created_at).toLocaleString()}</td></tr>`;
-    });
-
-    let logRowsHtml = "";
-    logResult.rows.forEach((row: any) => {
-      logRowsHtml += `<tr style="border-bottom: 1px solid #1e293b; font-family: monospace; font-size: 0.85rem;"><td style="padding:8px; color:#f87171;">${row.event_type}</td><td style="padding:8px; color:#cbd5e1;">${row.description}</td><td style="padding:8px; color:#64748b;">${new Date(row.timestamp).toLocaleString()}</td></tr>`;
-    });
-
-    ctx.response.type = "text/html";
-    ctx.response.body = `
-      <html>
-        <head><title>VerifAI Infrastructure Administration</title></head>
-        <body style="font-family: Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; margin: 0;">
-          <div style="max-width: 1200px; margin: 0 auto;">
-            <a href="/" style="color: #38bdf8; text-decoration: none; font-weight: bold;">&larr; Back to Portal</a>
-            <h1 style="color: #38bdf8; margin: 20px 0 5px 0;">🔒 VerifAI Infrastructure Control Panel (ISO 27001 Certified Architecture)</h1>
-            <p style="color: #94a3b8; margin-bottom: 30px;">Live Compliance Clusters Data Node &bull; Singapore</p>
-            
-            <h2 style="color: #f1f5f9; font-size: 1.2rem; margin-top: 30px; margin-bottom: 10px;">🛡️ ISO 27001 Live Security Audit Logs (A-12.4.1)</h2>
-            <table style="width: 100%; border-collapse: collapse; background: #020617; border-radius: 6px; margin-bottom: 40px; border: 1px solid #ef4444;">
-              <thead><tr style="background: #7f1d1d; color: #fca5a5; text-align: left;"><th style="padding: 10px;">Event Token</th><th style="padding: 10px;">Telemetry Audit Trail Log</th><th style="padding: 10px;">Timestamp</th></tr></thead>
-              <tbody>${logRowsHtml || '<tr><td colspan="3" style="padding:15px; text-align:center; color:#64748b;">No security incidents/events logged yet.</td></tr>'}</tbody>
-            </table>
-
-            <h2 style="color: #f1f5f9; font-size: 1.2rem; margin-bottom: 10px;">📊 Active Client Registry</h2>
-            <table style="width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 8px; margin-bottom: 40px;">
-              <thead><tr style="background: #334155; color: #cbd5e1; text-align: left;"><th style="padding: 12px;">UID</th><th style="padding: 12px;">Client Name</th><th style="padding: 12px;">Corporate Email</th><th style="padding: 12px;">Enterprise Node</th><th style="padding: 12px;">Billing Status</th><th style="padding: 12px;">Latest Score</th><th style="padding: 12px;">Last Active</th></tr></thead>
-              <tbody>${mainRowsHtml}</tbody>
-            </table>
-
-            <h2 style="color: #f1f5f9; font-size: 1.2rem; margin-bottom: 10px;">📜 Historical Audit Trails</h2>
-            <table style="width: 100%; border-collapse: collapse; background: #111827; border-radius: 8px;">
-              <thead><tr style="background: #1f2937; color: #9ca3af; text-align: left;"><th style="padding: 10px;">Audit ID</th><th style="padding: 10px;">Enterprise Entity</th><th style="padding: 10px;">Archived Score</th><th style="padding: 10px;">Logged Timestamp</th></tr></thead>
-              <tbody>${historyRowsHtml}</tbody>
-            </table>
-          </div>
-        </body>
-      </html>
-    `;
+    ctx.response.body = {
+      success: true,
+      metrics: {
+        active_registry: mainResult.rows,
+        historical_trails: historyResult.rows,
+        telemetry_logs: logResult.rows
+      }
+    };
   } catch (error) {
-    ctx.response.body = `❌ Database Cluster Error: ${error.message}`;
+    ctx.response.status = 500;
+    ctx.response.body = { success: false, error: error.message };
   }
 });
 
-// 🔒 ৯. সিকিউর লগআউট (কুকি ধ্বংসকরণ)
-router.get("/logout", async (ctx) => {
+// 🔒 ৯. সিকিউর লগআউট (POST)
+router.post("/api/auth/logout", async (ctx) => {
   await ctx.cookies.delete("auth_user_id");
-  ctx.response.redirect("/");
+  ctx.response.body = { success: true, message: "Session destroyed safely." };
+});
+
+// 📁 ১০. স্ট্যাটিক ফাইল হ্যান্ডলিং (পাবলিক ফোল্ডারের index.html লোড করার মেকানিজম)
+router.get("/(.*)", async (ctx) => {
+  try {
+    await ctx.send({
+      root: `${Deno.cwd()}/public`,
+      index: "index.html",
+    });
+  } catch {
+    // ফাইল না পাইলে ইনডেক্সে ফলব্যাক (Single Page Application UX)
+    await ctx.send({
+      root: `${Deno.cwd()}/public`,
+      index: "index.html",
+    });
+  }
 });
 
 app.use(router.routes());
 app.use(router.allowedMethods());
 
-console.log("🚀 VerifAI ISO Core Engine Live on port 3000");
+console.log("🚀 VerifAI Labs GRC API Engine Live on port 3000");
 await app.listen({ port: 3000 });
