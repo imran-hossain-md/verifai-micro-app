@@ -1,5 +1,10 @@
 {
   "tasks": {
-    "start": "deno run --allow-net --allow-read server.ts"
+    "dev": "deno run --allow-net --allow-env --allow-read --env --watch server.ts",
+    "start": "deno run --allow-net --allow-env --allow-read --env server.ts"
+  },
+  "imports": {
+    "postgres": "https://deno.land/x/postgres@v0.17.0/mod.ts",
+    "djwt": "https://deno.land/x/djwt@v2.8/mod.ts"
   }
 }

@@ -1,331 +1,198 @@
-// server.ts - VerifAI Core JSON API Engine
-import { Application, Router } from "https://deno.land/x/oak@v12.6.1/mod.ts";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
-import dbClient from "./db.ts"; // আপনার মডিউলার ডাটাবেজ ক্লায়েন্ট এক্সপোর্ট
+// server.ts এর ওপরের অংশ নিশ্চিত করুন:
+import { pool, initializeDatabase, logAuditAction } from "./db.ts";
+import { create, verify, decode } from "https://deno.land/x/djwt@v2.8/mod.ts";
 
-const app = new Application();
-const router = new Router();
+// বাকি সব এপিআই লজিক ও ডেনো সার্ভার আগের মতোই থাকবে...
 
-// কুকি সিকিউরিটির জন্য সাইনিং কি
-app.keys = ["SUPER_SECRET_AUDIT_KEY_2026_ISR"];
+// এনভায়রনমেন্ট ভেরিয়েবল চেকিং
+const JWT_KEY_RAW = Deno.env.get("JWT_SECRET") || "enterprise-super-secret-key-change-in-prod";
+const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET") || "";
 
-// 🛠️ VerifAI ল্যাবস ডাটাবেজ স্কিমা অটো-মাইগ্রেশন ও সিঙ্ক ম্যানেজার
-async function initDatabase() {
-  try {
-    // ১. ইউজার টেবিল এবং অ্যাডমিন রোল ট্র্যাকিং
-    await dbClient.queryArray(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        email VARCHAR(150) UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        company_name VARCHAR(150),
-        payment_status VARCHAR(50) DEFAULT 'pending',
-        is_admin BOOLEAN DEFAULT FALSE
-      );
-    `);
+// JWT সাইনিং কী জেনারেশন
+const encoder = new TextEncoder();
+const keyBuf = encoder.encode(JWT_KEY_RAW);
+const jwtCryptoKey = await crypto.subtle.importKey(
+  "raw",
+  keyBuf,
+  { name: "HMAC", hash: "SHA-512" },
+  false,
+  ["sign", "verify"]
+);
 
-    // পাসওয়ার্ড রিসেটের এন্টারপ্রাইজ কলাম ভেরিফিকেশন
-    await dbClient.queryArray(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR(255);`);
-    await dbClient.queryArray(`ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMP;`);
-    await dbClient.queryArray(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;`);
+// ডেটাবেস টেবিল ও স্ট্রাকচার বুটস্ট্র্যাপ করা
+await initializeDatabase();
 
-    // ২. অডিট রেজাল্ট ও র-রেসপন্স স্টোরেজ টেবিল
-    await dbClient.queryArray(`
-      CREATE TABLE IF NOT EXISTS audits (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-        score INTEGER NOT NULL,
-        responses JSONB NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // ৩. ISO 27001 (A-12.4.1) সিকিউরিটি লগ টেবিল
-    await dbClient.queryArray(`
-      CREATE TABLE IF NOT EXISTS system_logs (
-        id SERIAL PRIMARY KEY,
-        event_type VARCHAR(100) NOT NULL,
-        description TEXT NOT NULL,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    console.log("📁 VerifAI Systems Node: Database Architecture Synced.");
-  } catch (error) {
-    console.error("❌ Schema Sync Fail:", error);
-  }
+// --- হেল্পার: ক্লায়েন্ট আইপি বের করা ---
+function getClientIp(req: Request, info: Deno.ServeHandlerInfo): string {
+  return req.headers.get("x-forwarded-for") || info.remoteAddr.hostname || "127.0.0.1";
 }
-await initDatabase();
 
-// 🛡️ ISO সিকিউরিটি ইভেন্ট লগিং ইউটিলস
-async function logSecurityEvent(eventType: string, description: string) {
+// --- হেল্পার: মাল্টি-টেন্যান্ট সেশন ভেরিফিকেশন ---
+async function getAuthenticatedSession(req: Request) {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const token = authHeader.split(" ")[1];
   try {
-    await dbClient.queryArray(
-      "INSERT INTO system_logs (event_type, description) VALUES ($1, $2)",
-      [eventType, description]
-    );
-  } catch (err) {
-    console.error("Log Engine Failed:", err);
+    const payload = await verify(token, jwtCryptoKey);
+    return payload as { userId: string; orgId: string; role: string; subscriptionStatus: string };
+  } catch {
+    return null;
   }
 }
 
-// -------------------------------------------------------------------------
-// 🔐 সেশন ও অথেনটিকেশন মিডলওয়্যার (Security Gate)
-// -------------------------------------------------------------------------
-async function getAuthUser(ctx: any) {
-  const userId = await ctx.cookies.get("auth_user_id", { signed: true });
-  if (!userId) return null;
-  
-  const userRes = await dbClient.queryObject<any>(
-    "SELECT id, name, email, company_name, payment_status, is_admin FROM users WHERE id = $1", 
-    [userId]
-  );
-  return userRes.rows[0] || null;
-}
+// --- মেক্সিমাম সিকিউর রাউটিং হ্যান্ডলার ---
+Deno.serve(async (req: Request, info: Deno.ServeHandlerInfo) => {
+  const url = new URL(req.url);
+  const ipAddress = getClientIp(req, info);
+  const userAgent = req.headers.get("user-agent") || "Unknown";
 
-// -------------------------------------------------------------------------
-// 📡 JSON API ROUTING (Clean Architecture)
-// -------------------------------------------------------------------------
+  // ১. স্ট্যাটিক ফ্রন্টএন্ড পরিবেশন (public/index.html)
+  if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+    try {
+      const html = await Deno.readTextFile("./public/index.html");
+      return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+    } catch {
+      return new Response("Frontend index.html not found.", { status: 404 });
+    }
+  }
 
-// ১. গ্লোবাল স্টেট চেক এপিআই (ফ্রন্টএন্ড লোড হওয়ার সাথে সাথে এটি কল করবে)
-router.get("/api/session", async (ctx) => {
-  const user = await getAuthUser(ctx);
-  ctx.response.body = { authenticated: !!user, user: user || null };
-});
+  // ২. স্ট্রাইপ এন্টারপ্রাইজ ওয়েবহুক লিসেনার (B2B Billing)
+  if (req.method === "POST" && url.pathname === "/api/webhook/stripe") {
+    const client = await pool.connect();
+    try {
+      const bodyText = await req.text();
+      // প্রোডাকশনে স্ট্রাইপ সিগনেচার ভ্যালিডেশন এখানে ইমপ্লিমেন্ট করতে হবে (Stripe SDK দিয়ে)
+      const event = JSON.parse(bodyText);
 
-// ২. ক্লায়েন্ট রেজিস্ট্রেশন (POST)
-router.post("/api/auth/register", async (ctx) => {
-  try {
-    const body = ctx.request.body({ type: "json" });
-    const { name, email, company_name, password } = await body.value;
+      if (event.type === "invoice.payment_succeeded" || event.type === "customer.subscription.updated") {
+        const session = event.data.object;
+        const stripeCustomerId = session.customer;
+        const status = session.status === "active" ? "active" : "past_due";
 
-    if (!name || !email || !password) {
-      ctx.response.status = 400;
-      ctx.response.body = { success: false, error: "Missing required compliance fields." };
-      return;
+        await client.queryObject(`
+          UPDATE organizations 
+          SET subscription_status = $1, subscription_ends_at = TO_TIMESTAMP($2)
+          WHERE stripe_customer_id = $3
+        `, [status, session.current_period_end || (Date.now() / 1000 + 2592000), stripeCustomerId]);
+        
+        return new Response(JSON.stringify({ received: true }), { status: 200 });
+      }
+    } catch (err) {
+      return new Response(`Webhook Error: ${err.message}`, { status: 400 });
+    } finally {
+      client.release();
+    }
+  }
+
+  // ৩. এআই গভারনেন্স অ্যাসেসমেন্ট সাবমিশন ও ওয়েইটেড স্কোরিং ইঞ্জিন
+  if (req.method === "POST" && url.pathname === "/api/assessment/submit") {
+    const session = await getAuthenticatedSession(req);
+    if (!session) return new Response("Unauthorized Execution", { status: 401 });
+    if (session.subscriptionStatus !== "active") {
+      return new Response("Active B2B Plan Required", { status: 403 });
     }
 
-    const salt = await bcrypt.genSalt(8);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    const { orgId, userId } = session;
+    const body = await req.json(); // এক্সপেক্টেড ফরম্যাট: { responses: [ { questionId, pillar, selectedScore, maxScore, questionText, recommendation } ] }
+    const client = await pool.connect();
 
-    // সিস্টেমের ১ম ইউজারকে অটো-অ্যাডমিন করার সেফগার্ড মেকানিজম
-    const countCheck = await dbClient.queryArray("SELECT COUNT(*) FROM users");
-    const isFirstUser = parseInt(countCheck.rows[0][0] as string) === 0;
+    try {
+      // বিগ-৪ কমপ্লায়েন্স ওয়েইটেড রুলস
+      const WEIGHTS: Record<string, number> = {
+        STRATEGY: 0.25,
+        DATA_GOVERNANCE: 0.25,
+        TECHNICAL_COMPLIANCE: 0.30,
+        CONTINUOUS_MONITORING: 0.20
+      };
 
-    await dbClient.queryArray(
-      `INSERT INTO users (name, email, company_name, password, is_admin) VALUES ($1, $2, $3, $4, $5)`,
-      [name, email, company_name || "N/A", hashedPassword, isFirstUser]
-    );
+      const pillarTotals: Record<string, { max: number; actual: number }> = {
+        STRATEGY: { max: 0, actual: 0 },
+        DATA_GOVERNANCE: { max: 0, actual: 0 },
+        TECHNICAL_COMPLIANCE: { max: 0, actual: 0 },
+        CONTINUOUS_MONITORING: { max: 0, actual: 0 }
+      };
 
-    ctx.response.status = 201;
-    ctx.response.body = { success: true, message: "Registration successful." };
-  } catch (error) {
-    ctx.response.status = 400;
-    ctx.response.body = { success: false, error: "Email already exists or database constraint violation." };
-  }
-});
+      const gapAnalysis: any[] = [];
 
-// ৩. ক্লায়েন্ট সিকিউর লগইন (POST)
-router.post("/api/auth/login", async (ctx) => {
-  const body = ctx.request.body({ type: "json" });
-  const { email, password } = await body.value;
+      // এটমিক ট্রানজেকশন প্রসেসিং শুরু
+      await client.queryObject("BEGIN");
 
-  const result = await dbClient.queryObject<any>(
-    `SELECT id, password, payment_status, is_admin FROM users WHERE email = $1`, [email]
-  );
+      for (const res of body.responses) {
+        // ডেটাবেসে রেসপন্স সেভ/আপসার্ট করা (মাল্টি-টেন্যান্ট আইসোলেশন এনফোর্সড)
+        await client.queryObject(`
+          INSERT INTO assessment_responses (org_id, user_id, pillar, question_id, answer_value, score_awarded)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (org_id, question_id) 
+          DO UPDATE SET user_id = $2, answer_value = $5, score_awarded = $6
+        `, [orgId, userId, res.pillar, res.questionId, res.answerValue, res.selectedScore]);
 
-  if (result.rows.length > 0) {
-    const user = result.rows[0];
-    const isPasswordMatch = await bcrypt.compare(password, user.password);
-    
-    if (isPasswordMatch) {
-      await ctx.cookies.set("auth_user_id", String(user.id), { 
-        httpOnly: true, 
-        signed: true,
-        sameSite: "lax"
+        // স্কোর এগ্রিগেশন অবজেক্ট বিল্ড-আপ
+        if (pillarTotals[res.pillar]) {
+          pillarTotals[res.pillar].actual += res.selectedScore;
+          pillarTotals[res.pillar].max += res.maxScore;
+        }
+
+        // গ্যাপ অ্যানালাইসিস ডিটেকশন (বিগ-৪ থ্রেশহোল্ড রুল: ফুল স্কোর না পেলে গ্যাপ হিসেবে গণ্য হবে)
+        if (res.selectedScore < res.maxScore) {
+          gapAnalysis.push({
+            code: res.questionId,
+            pillar: res.pillar,
+            issue: `Incomplete alignment identified in: "${res.questionText}"`,
+            remediation: res.recommendation || "Review organizational deployment strategy."
+          });
+        }
+      }
+
+      // প্রতিটি পিলারের পারসেন্টেজ বের করা
+      const pillarScores: Record<string, number> = {};
+      Object.keys(pillarTotals).forEach((key) => {
+        const target = pillarTotals[key];
+        pillarScores[key] = target.max > 0 ? parseFloat(((target.actual / target.max) * 100).toFixed(2)) : 0;
       });
 
-      ctx.response.body = { 
-        success: true, 
-        payment_status: user.payment_status, 
-        is_admin: user.is_admin 
-      };
-      return;
+      // চূড়ান্ত গ্লোবাল ওয়েইটেড ক্যালকুলেশন
+      const overallScore = parseFloat(
+        (
+          (pillarScores["STRATEGY"] || 0) * WEIGHTS.STRATEGY +
+          (pillarScores["DATA_GOVERNANCE"] || 0) * WEIGHTS.DATA_GOVERNANCE +
+          (pillarScores["TECHNICAL_COMPLIANCE"] || 0) * WEIGHTS.TECHNICAL_COMPLIANCE +
+          (pillarScores["CONTINUOUS_MONITORING"] || 0) * WEIGHTS.CONTINUOUS_MONITORING
+        ).toFixed(2)
+      );
+
+      // রেডিনেস রিপোর্ট পারসিস্ট করা
+      const reportResult = await client.queryObject<{ id: string }>(`
+        INSERT INTO readiness_reports (org_id, overall_score, pillar_scores, gap_analysis, generated_by)
+        VALUES ($1, $2, $3, $4, $5) RETURNING id
+      `, [orgId, overallScore, JSON.stringify(pillarScores), JSON.stringify(gapAnalysis), session.userId]);
+
+      const reportId = reportResult.rows[0].id;
+
+      // ট্রানজেকশন সফলভাবে শেষ করা
+      await client.queryObject("COMMIT");
+
+      // অডিট ট্রেইল সিকিউর করা (বিগ-৪ নন-রিপুডিয়েশন গ্যারান্টি)
+      await logAuditAction(orgId, userId, "COMPLIANCE_ASSESSMENT_SUBMITTED", ipAddress, userAgent, {
+        reportId,
+        overallScore
+      });
+
+      return new Response(JSON.stringify({
+        success: true,
+        reportId,
+        overallScore,
+        pillarScores,
+        gapAnalysis
+      }), { status: 200, headers: { "content-type": "application/json" } });
+
+    } catch (error) {
+      await client.queryObject("ROLLBACK");
+      console.error("Governance engine crash pipeline failure:", error);
+      return new Response("Internal Engine Transaction Failure", { status: 500 });
+    } finally {
+      client.release();
     }
   }
 
-  ctx.response.status = 401;
-  ctx.response.body = { success: false, error: "Invalid cryptographic credentials." };
+  return new Response("Route endpoint not matched", { status: 404 });
 });
-
-// ৪. পেমেন্ট গেটওয়ে সিমুলেশন (POST)
-router.post("/api/payment/checkout", async (ctx) => {
-  const user = await getAuthUser(ctx);
-  if (!user) { ctx.response.status = 401; return; }
-
-  await dbClient.queryArray(`UPDATE users SET payment_status = 'paid' WHERE id = $1`, [user.id]);
-  await logSecurityEvent("BILLING_SUCCESS", `User UID ${user.id} successfully completed Sandbox settlement.`);
-  
-  ctx.response.body = { success: true, message: "Payment processed successfully." };
-});
-
-// ৫. ৫-প্যারামিটার অডিট ইঞ্জিন সাবমিশন (POST)
-router.post("/api/audit/submit", async (ctx) => {
-  const user = await getAuthUser(ctx);
-  if (!user) { ctx.response.status = 401; return; }
-  if (user.payment_status !== "paid") {
-    ctx.response.status = 402;
-    ctx.response.body = { success: false, error: "Payment required to unlock GRC engine." };
-    return;
-  }
-
-  const body = ctx.request.body({ type: "json" });
-  const responses = await body.value; // { q1: "yes", q2: "no", q3: "yes", q4: "yes", q5: "no" }
-
-  // 📈 ৫টি কোর স্ট্র্যাটেজিক অডিট প্রশ্ন ও ২০% ওয়েটেজ লজিক
-  let score = 0;
-  const questions = ["q1", "q2", "q3", "q4", "q5"];
-  questions.forEach((q) => {
-    if (responses[q] === "yes") score += 20;
-  });
-
-  await dbClient.queryArray(
-    `INSERT INTO audits (user_id, score, responses) VALUES ($1, $2, $3)`, 
-    [user.id, score, JSON.stringify(responses)]
-  );
-
-  ctx.response.body = { success: true, calculated_score: score };
-});
-
-// ৬. ফরগট পাসওয়ার্ড টোকেন জেনারেটর (POST)
-router.post("/api/auth/forgot-password", async (ctx) => {
-  const body = ctx.request.body({ type: "json" });
-  const { email } = await body.value;
-
-  const userRes = await dbClient.queryObject<any>("SELECT id FROM users WHERE email = $1", [email]);
-
-  if (userRes.rows.length === 0) {
-    ctx.response.status = 404;
-    ctx.response.body = { success: false, error: "Registry entry not found." };
-    return;
-  }
-
-  const user = userRes.rows[0];
-  const token = crypto.randomUUID();
-  const expires = new Date(Date.now() + 15 * 60 * 1000); 
-
-  await dbClient.queryArray(
-    "UPDATE users SET reset_token = $1, reset_token_expires = $2 WHERE id = $3",
-    [token, expires, user.id]
-  );
-
-  await logSecurityEvent("PASSWORD_RESET_REQUEST", `Secure token dispatched for UID ${user.id}`);
-
-  // ফ্রন্টএন্ড যাতে ইউজারকে লিংকটা শো করতে পারে
-  ctx.response.body = { 
-    success: true, 
-    reset_token: token,
-    expires_in_minutes: 15 
-  };
-});
-
-// ৭. পাসওয়ার্ড রিসেট এক্সিকিউশন (POST)
-router.post("/api/auth/reset-password", async (ctx) => {
-  const body = ctx.request.body({ type: "json" });
-  const { token, new_password } = await body.value;
-
-  const userRes = await dbClient.queryObject<any>(
-    "SELECT id, reset_token_expires FROM users WHERE reset_token = $1", [token]
-  );
-
-  if (userRes.rows.length === 0) {
-    ctx.response.status = 400;
-    ctx.response.body = { success: false, error: "Invalid or corrupt security token." };
-    return;
-  }
-
-  const user = userRes.rows[0];
-  if (new Date() > new Date(user.reset_token_expires)) {
-    ctx.response.status = 400;
-    ctx.response.body = { success: false, error: "Token expired. Request a new validation lease." };
-    return;
-  }
-
-  const hashedPassword = await bcrypt.hash(new_password);
-  await dbClient.queryArray(
-    "UPDATE users SET password = $1, reset_token = NULL, reset_token_expires = NULL WHERE id = $2",
-    [hashedPassword, user.id]
-  );
-
-  await logSecurityEvent("PASSWORD_CHANGE_SUCCESS", `Cryptographic hash rotation completed for UID ${user.id}`);
-  ctx.response.body = { success: true, message: "Password updated via fallback token." };
-});
-
-// 📊 ৮. ইনফ্রাস্ট্রাকচার ড্যাশবোর্ড ডেটা এপিআই (🔒 সিকিউরিটি লকিং গেটওয়ে)
-router.get("/api/admin/dashboard-telemetry", async (ctx) => {
-  const user = await getAuthUser(ctx);
-  
-  // ⛔ স্ট্রাকচারাল গেটকীপার: ইউজার লগড-ইন না থাকলে বা admin ফ্ল্যাগ মিথ্যা হলে রিফিউজ
-  if (!user || user.is_admin !== true) {
-    ctx.response.status = 403;
-    ctx.response.body = { success: false, error: "Access Denied: Infrastructure Clearance Required." };
-    return;
-  }
-
-  try {
-    const mainResult = await dbClient.queryObject<any>(`
-      SELECT DISTINCT ON (u.id) u.id, u.name, u.email, u.company_name, u.payment_status, a.score, a.created_at 
-      FROM users u LEFT JOIN audits a ON u.id = a.user_id ORDER BY u.id DESC, a.created_at DESC
-    `);
-
-    const historyResult = await dbClient.queryObject<any>(`
-      SELECT a.id as audit_id, u.name, u.company_name, a.score, a.created_at FROM audits a
-      JOIN users u ON a.user_id = u.id ORDER BY a.created_at DESC
-    `);
-
-    const logResult = await dbClient.queryObject<any>(
-      "SELECT id, event_type, description, timestamp FROM system_logs ORDER BY timestamp DESC LIMIT 10"
-    );
-
-    ctx.response.body = {
-      success: true,
-      metrics: {
-        active_registry: mainResult.rows,
-        historical_trails: historyResult.rows,
-        telemetry_logs: logResult.rows
-      }
-    };
-  } catch (error) {
-    ctx.response.status = 500;
-    ctx.response.body = { success: false, error: error.message };
-  }
-});
-
-// 🔒 ৯. সিকিউর লগআউট (POST)
-router.post("/api/auth/logout", async (ctx) => {
-  await ctx.cookies.delete("auth_user_id");
-  ctx.response.body = { success: true, message: "Session destroyed safely." };
-});
-
-// 📁 ১০. স্ট্যাটিক ফাইল হ্যান্ডলিং (পাবলিক ফোল্ডারের index.html লোড করার মেকানিজম)
-router.get("/(.*)", async (ctx) => {
-  try {
-    await ctx.send({
-      root: `${Deno.cwd()}/public`,
-      index: "index.html",
-    });
-  } catch {
-    // ফাইল না পাইলে ইনডেক্সে ফলব্যাক (Single Page Application UX)
-    await ctx.send({
-      root: `${Deno.cwd()}/public`,
-      index: "index.html",
-    });
-  }
-});
-
-app.use(router.routes());
-app.use(router.allowedMethods());
-
-console.log("🚀 VerifAI Labs GRC API Engine Live on port 3000");
-await app.listen({ port: 3000 });

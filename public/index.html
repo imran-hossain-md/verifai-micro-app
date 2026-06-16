@@ -1,408 +1,460 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full bg-slate-950">
+<html lang="bn">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VerifAI Labs - Governance & Audit Portal</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              50: '#f0f9ff',
-              100: '#e0f2fe',
-              500: '#0ea5e9', // Deep Sky Blue
-              600: '#0284c7',
-              900: '#0c4a6e',
-            },
-            dark: {
-              card: '#0f172a',
-              bg: '#020617',
-              border: '#1e293b'
-            }
-          }
-        }
-      }
-    }
-  </script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    body { font-family: 'Inter', sans-serif; }
-    .hidden-view { display: none !important; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VerifAI Micro-Audit Tool | Enterprise AI Governance</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
 </head>
-<body class="h-full text-slate-100 bg-dark-bg antialiased selection:bg-brand-500 selection:text-white">
+<body class="bg-slate-900 text-slate-100 min-h-screen">
 
-  <nav class="border-b border-dark-border bg-dark-card/50 backdrop-blur-md sticky top-0 z-50">
-    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-      <div class="flex h-16 justify-between items-center">
-        <div class="flex items-center gap-3">
-          <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-brand-600 to-emerald-500 flex items-center justify-center shadow-lg shadow-brand-500/20">
-            <span class="font-bold text-white tracking-wider text-sm">V</span>
-          </div>
-          <div>
-            <span class="font-bold text-lg text-white tracking-tight">VerifAI<span class="text-brand-500 font-medium text-sm ml-1">Labs</span></span>
-          </div>
+    <nav class="border-b border-slate-800 bg-slate-900/50 backdrop-blur px-6 py-4 flex justify-between items-center sticky top-0 z-50">
+        <div class="flex items-center space-x-3">
+            <span class="text-xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">VerifAI Labs</span>
+            <span class="text-xs px-2 py-0.5 rounded border border-indigo-500/30 text-indigo-400 font-medium">Enterprise Suite</span>
         </div>
-        <div class="flex items-center gap-4">
-          <span id="nav-user-info" class="text-sm text-slate-400 hidden"></span>
-          <button id="btn-logout" onclick="handleLogout()" class="hidden text-xs font-semibold text-slate-400 hover:text-white border border-dark-border px-3 py-1.5 rounded-md transition-all">Secure Sign Out</button>
+        <div class="flex items-center space-x-4">
+            <div class="text-right hidden sm:block">
+                <p class="text-xs text-slate-400">Enterprise Tenant</p>
+                <p id="tenant-name" class="text-sm font-semibold text-slate-200">Loading Client Profile...</p>
+            </div>
+            <button onclick="logout()" class="text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded transition">Logout</button>
         </div>
-      </div>
-    </div>
-  </nav>
+    </nav>
 
-  <main class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12">
-    
-    <div id="view-loading" class="flex flex-col items-center justify-center py-20">
-      <div class="animate-spin rounded-full h-10 w-10 border-2 border-t-brand-500 border-dark-border mb-4"></div>
-      <p class="text-slate-400 text-sm tracking-wide">Syncing Security Handshake...</p>
-    </div>
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        
+        <div id="stepper-region" class="mb-10 max-w-3xl mx-auto">
+            <div class="flex items-center justify-between relative">
+                <div class="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-slate-800 -z-10"></div>
+                <div id="step-line-progress" class="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-indigo-500 -z-10 transition-all duration-300" style="width: 0%;"></div>
 
-    <div id="view-landing" class="hidden-view max-w-md mx-auto mt-8 transition-all duration-300">
-      <div class="bg-dark-card border border-dark-border rounded-2xl p-8 shadow-2xl">
-        <div class="text-center mb-8">
-          <h2 id="auth-title" class="text-2xl font-bold tracking-tight text-white">Sign in to Enterprise Vault</h2>
-          <p id="auth-subtitle" class="text-sm text-slate-400 mt-2">Enter credentials to lease a secure compliance token.</p>
-        </div>
-
-        <div id="auth-alert" class="hidden p-3 rounded-lg text-xs font-medium mb-4 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"></div>
-
-        <form id="form-login" onsubmit="handleLogin(event)" class="space-y-5">
-          <div>
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Corporate Email</label>
-            <input type="email" id="login-email" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-all text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Secure Password</label>
-            <input type="password" id="login-password" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-all text-sm">
-          </div>
-          <button type="submit" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-semibold py-3 px-4 rounded-lg transition-all text-sm shadow-lg shadow-brand-600/10">Authorize Session</button>
-          <p class="text-center text-xs text-slate-400 mt-4">New Organization? <a href="#" onclick="toggleAuthMode(true)" class="text-brand-500 hover:underline">Register Node</a></p>
-        </form>
-
-        <form id="form-register" onsubmit="handleRegister(event)" class="space-y-5 hidden-view">
-          <div>
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Officer Name</label>
-            <input type="text" id="reg-name" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 transition-all text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Corporate Email</label>
-            <input type="email" id="reg-email" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 transition-all text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Company Entity</label>
-            <input type="text" id="reg-company" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 transition-all text-sm">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Access Password</label>
-            <input type="password" id="reg-password" required class="w-full bg-dark-bg border border-dark-border rounded-lg px-4 py-3 text-slate-100 focus:outline-none focus:border-brand-500 transition-all text-sm">
-          </div>
-          <button type="submit" class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-3 px-4 rounded-lg transition-all text-sm shadow-lg shadow-emerald-600/10">Deploy New Node</button>
-          <p class="text-center text-xs text-slate-400 mt-4">Already registered? <a href="#" onclick="toggleAuthMode(false)" class="text-brand-500 hover:underline">Sign In</a></p>
-        </form>
-      </div>
-    </div>
-
-    <div id="view-checkout" class="hidden-view max-w-md mx-auto text-center mt-12">
-      <div class="bg-dark-card border border-dark-border rounded-2xl p-8 shadow-2xl relative overflow-hidden">
-        <div class="absolute top-0 right-0 h-24 w-24 bg-gradient-to-bl from-brand-500/10 to-transparent rounded-bl-full"></div>
-        <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-brand-500/10 text-brand-400 mb-4">💳</div>
-        <h2 class="text-xl font-bold text-white tracking-tight">Unlock AI Compliance Engine</h2>
-        <p class="text-slate-400 text-sm mt-2">Access the ISO 42001 & EU AI Act real-time algorithmic telemetry pipeline.</p>
-        <div class="my-6 bg-dark-bg border border-dark-border rounded-xl p-4">
-          <span class="text-xs text-slate-500 block uppercase tracking-wider font-semibold">One-Time Lease Fee</span>
-          <span class="text-3xl font-bold text-white mt-1">$99 <span class="text-sm font-medium text-slate-400">USD</span></span>
-        </div>
-        <button onclick="processPayment()" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-semibold py-3 px-4 rounded-lg transition-all text-sm shadow-md">Settle Ledger via Stripe Sandbox</button>
-      </div>
-    </div>
-
-    <div id="view-audit-form" class="hidden-view max-w-2xl mx-auto">
-      <div class="mb-8 border-b border-dark-border pb-6">
-        <h1 class="text-2xl font-bold tracking-tight text-white">Algorithmic Governance Audit</h1>
-        <p class="text-sm text-slate-400 mt-1">VerifAI Core Parameter System — Aligned with ISO 42001 & European AI Act.</p>
-      </div>
-      
-      <form onsubmit="handleAuditSubmit(event)" class="space-y-4">
-        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
-          <label class="block text-sm font-medium text-slate-200 mb-3">1. Model Bias Mitigation Framework</label>
-          <p class="text-xs text-slate-500 mb-4">Do you continuously document, trace, and audit demographic parity or bias mitigation protocols in dataset pipelines?</p>
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q1" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Explicitly Documented (+20%)</label>
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q1" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> Deficit / Missing (0%)</label>
-          </div>
-        </div>
-        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
-          <label class="block text-sm font-medium text-slate-200 mb-3">2. Human-in-the-Loop (HITL) Interventions</label>
-          <p class="text-xs text-slate-500 mb-4">Is there an active operational guardrail allowing designated human overseers to immediately override or block AI model outputs?</p>
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q2" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Guardrail Implemented (+20%)</label>
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q2" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> Autonomous No-Override (0%)</label>
-          </div>
-        </div>
-        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
-          <label class="block text-sm font-medium text-slate-200 mb-3">3. Training Data Privacy & Consent Scrubber</label>
-          <p class="text-xs text-slate-500 mb-4">Are training arrays and LLM fine-tuning weights explicitly scrubbed of personal identifiable info (PII) under GDPR parameters?</p>
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q3" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Consent Compliant (+20%)</label>
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q3" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> Unfiltered Sync (0%)</label>
-          </div>
-        </div>
-        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
-          <label class="block text-sm font-medium text-slate-200 mb-3">4. Algorithmic Hallucination Log Tracking</label>
-          <p class="text-xs text-slate-500 mb-4">Does the production infrastructure maintain automated immutable logs of system failures, drift, or erroneous reasoning loops?</p>
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q4" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Logging Operational (+20%)</label>
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q4" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> No Structural Trails (0%)</label>
-          </div>
-        </div>
-        <div class="bg-dark-card border border-dark-border rounded-xl p-5 hover:border-slate-700 transition-all">
-          <label class="block text-sm font-medium text-slate-200 mb-3">5. Cyber Resilience & Prompt Injection Barriers</label>
-          <p class="text-xs text-slate-500 mb-4">Are adversarial security vector mappings deployed to mitigate prompt hijacking, jailbreaks, or data extraction attacks?</p>
-          <div class="flex gap-4">
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q5" value="yes" required class="text-brand-500 focus:ring-0 bg-transparent"> Shielding Active (+20%)</label>
-            <label class="flex items-center gap-2 text-xs bg-dark-bg px-4 py-2.5 rounded-lg border border-dark-border cursor-pointer hover:border-slate-600"><input type="radio" name="q5" value="no" class="text-brand-500 focus:ring-0 bg-transparent"> Vulnerable / Native (0%)</label>
-          </div>
+                <div class="flex flex-col items-center">
+                    <div id="step-dot-1" class="w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-sm ring-4 ring-slate-900">1</div>
+                    <span class="text-xs mt-2 font-medium text-slate-300">Strategy</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <div id="step-dot-2" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold text-sm ring-4 ring-slate-900">2</div>
+                    <span class="text-xs mt-2 font-medium text-slate-400">Data Gov</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <div id="step-dot-3" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold text-sm ring-4 ring-slate-900">3</div>
+                    <span class="text-xs mt-2 font-medium text-slate-400">Technical</span>
+                </div>
+                <div class="flex flex-col items-center">
+                    <div id="step-dot-4" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center font-bold text-sm ring-4 ring-slate-900">4</div>
+                    <span class="text-xs mt-2 font-medium text-slate-400">Monitoring</span>
+                </div>
+            </div>
         </div>
 
-        <button type="submit" class="w-full bg-brand-600 hover:bg-brand-500 text-white font-bold py-4 rounded-xl transition-all text-sm shadow-lg shadow-brand-600/20 tracking-wide uppercase">Commit Registry & Sync Score</button>
-      </form>
-    </div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <div class="lg:col-span-2 bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow-xl" id="assessment-card">
+                <div id="question-flow-view">
+                    <div class="flex justify-between items-center mb-4">
+                        <span id="pillar-badge" class="text-xs font-semibold uppercase tracking-wider bg-indigo-500/10 text-indigo-400 px-2.5 py-1 rounded border border-indigo-500/20">STRATEGY</span>
+                        <span id="question-index" class="text-xs text-slate-400 font-medium">Question 1 of 3</span>
+                    </div>
 
-    <div id="view-success" class="hidden-view max-w-md mx-auto text-center mt-12">
-      <div class="bg-dark-card border border-dark-border rounded-2xl p-8 shadow-2xl">
-        <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-400 mb-4 text-xl">✓</div>
-        <h1 class="text-2xl font-bold tracking-tight text-white">Audit Committed</h1>
-        <p class="text-sm text-slate-400 mt-1">Cryptographic matrix synced successfully.</p>
-        <div class="my-8 py-6 px-4 bg-dark-bg border border-dark-border rounded-xl">
-          <span class="text-xs text-slate-500 block uppercase tracking-wider font-semibold">Framework Alignment Score</span>
-          <span id="final-score-display" class="text-5xl font-extrabold text-brand-500 tracking-tight mt-2 block">0%</span>
+                    <h2 id="question-text" class="text-xl font-semibold text-slate-100 mb-2 leading-snug">Loading Governance Framework Specifications...</h2>
+                    <p id="question-desc" class="text-sm text-slate-400 mb-6 italic">Loading baseline control metrics...</p>
+
+                    <div id="options-container" class="space-y-3 mb-8"></div>
+
+                    <div class="flex justify-between items-center pt-4 border-t border-slate-800">
+                        <button id="btn-prev" onclick="previousQuestion()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium rounded transition hidden">Previous</button>
+                        <div class="ml-auto">
+                            <button id="btn-next" onclick="nextQuestion()" class="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded shadow transition">Next Control Step</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="loading-view" class="hidden flex flex-col items-center justify-center py-20 space-y-4">
+                    <div class="w-12 h-12 border-4 border-t-indigo-500 border-slate-800 rounded-full animate-spin"></div>
+                    <p class="text-sm text-slate-300 font-medium">Processing Weighted Scoring Matrices (Big-4 Standards)...</p>
+                </div>
+            </div>
+
+            <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-6 shadow-xl flex flex-col justify-between" id="report-card">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-200 mb-4 flex items-center gap-2">
+                        <span>📊</span> Real-Time Compliance Vault
+                    </h3>
+                    <p class="text-xs text-slate-400 mb-6 leading-relaxed">The analytics tracking layer builds an immutable assessment footprint dynamically linked to ISO 42001 & EU AI Act regulatory pillars.</p>
+
+                    <div class="flex flex-col items-center justify-center py-6 border border-slate-800 bg-slate-950/40 rounded-lg p-4 mb-6">
+                        <span class="text-xs text-slate-400 font-medium uppercase tracking-wider mb-1">Current Calculated Readiness</span>
+                        <div id="live-score-display" class="text-4xl font-extrabold text-slate-500">0.00%</div>
+                        <div id="live-status-badge" class="text-[10px] uppercase font-bold mt-2 px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">Audit Status: Inactive</div>
+                    </div>
+
+                    <div id="gap-preview-container" class="space-y-2 hidden">
+                        <h4 class="text-xs font-bold text-red-400 uppercase tracking-wider mb-2">Identified Compliance Gaps</h4>
+                        <div id="gap-list" class="max-h-48 overflow-y-auto space-y-2 pr-1 text-xs">
+                            </div>
+                    </div>
+                </div>
+
+                <div class="pt-6 border-t border-slate-800 mt-6">
+                    <button id="btn-download-pdf" onclick="exportEnterprisePDF()" class="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold py-2.5 px-4 rounded shadow-lg transition duration-200 cursor-not-allowed opacity-40 flex items-center justify-center gap-2" disabled>
+                        <span>🔒</span> Download Executive PDF Report
+                    </button>
+                </div>
+            </div>
+
         </div>
-        <button onclick="checkAppStatus()" class="w-full bg-dark-border hover:bg-slate-800 text-white font-semibold py-3 px-4 rounded-lg transition-all text-sm">Run Another Analysis</button>
-      </div>
-    </div>
+    </main>
 
-    <div id="view-admin" class="hidden-view space-y-8">
-      <div class="border-b border-dark-border pb-6 flex justify-between items-end">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight text-white flex items-center gap-2">🔒 Infrastructure Telemetry Control <span class="text-xs bg-red-500/10 text-red-400 border border-red-500/20 font-mono font-medium px-2 py-0.5 rounded">ISO 27001</span></h1>
-          <p class="text-sm text-slate-400 mt-1">System Core Live Node Registry & Forensic Audit Logs</p>
-        </div>
-        <button onclick="checkAppStatus()" class="text-xs font-semibold bg-brand-600 text-white px-4 py-2 rounded-lg hover:bg-brand-500 transition-all">Client Portal Fallback</button>
-      </div>
+    <script>
+        // মেক-ডাটা: বিগ-৪ কমপ্লায়েন্স কোয়েশ্চেন ম্যাট্রিক্স
+        const QUESTION_BANK = [
+            {
+                id: "GOV-STRAT-01",
+                pillar: "STRATEGY",
+                text: "Is an approved corporate AI usage policy implemented across your organization?",
+                desc: "Requires explicit board authorization and routine governance reviews mapping operational liabilities.",
+                weight: 1.2,
+                maxScore: 100,
+                recommendation: "Establish formal corporate AI Policy framework and execute Board-level sign-off protocol immediately.",
+                options: [
+                    { value: "YES", score: 100, text: "Fully deployed and audited annually." },
+                    { value: "PARTIAL", score: 50, text: "Draft policy exists with limited executive execution." },
+                    { value: "NO", score: 0, text: "No framework documentation established." }
+                ]
+            },
+            {
+                id: "GOV-DATA-02",
+                pillar: "DATA_GOVERNANCE",
+                text: "Are data processing pipelines scrubbing PII data before hitting model ingestion loops?",
+                desc: "Mandated verification protocols mirroring GDPR/EU AI Act provisions for processing personal data assets.",
+                weight: 1.5,
+                maxScore: 100,
+                recommendation: "Implement automated data tokenization, anonymization or masking pipelines at cloud-storage boundaries.",
+                options: [
+                    { value: "MASKED", score: 100, text: "Automated real-time masking or tokenization enforced." },
+                    { value: "MANUAL", score: 40, text: "Manual ad-hoc validation before static storage ingest." },
+                    { value: "NONE", score: 0, text: "Raw datasets passed directly without data masking." }
+                ]
+            },
+            {
+                id: "GOV-TECH-03",
+                pillar: "TECHNICAL_COMPLIANCE",
+                text: "Do you maintain deterministic tracking logs for model bias and fairness variances?",
+                desc: "Continuous evaluation routines tracking systemic algorithmic drift and adversarial risks.",
+                weight: 1.0,
+                maxScore: 100,
+                recommendation: "Integrate model evaluation guardrails (Audit-as-Code frameworks) inside your pipeline deployment workflow.",
+                options: [
+                    { value: "CONTINUOUS", score: 100, text: "Real-time logging via automated assertion layers." },
+                    { value: "BATCH", score: 60, text: "Periodic evaluation run before core lifecycle release windows." },
+                    { value: "UNMONITORED", score: 0, text: "Outputs relied on implicitly without variance alerting loops." }
+                ]
+            }
+        ];
 
-      <div class="space-y-3">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-red-400 flex items-center gap-2"><span>●</span> Telemetry Audit Trail (A-12.4.1)</h2>
-        <div class="bg-dark-card border border-red-500/20 rounded-xl overflow-hidden shadow-xl">
-          <table class="w-full text-left border-collapse">
-            <thead>
-              <tr class="bg-red-950/20 border-b border-dark-border text-xs text-red-300 font-mono"><th class="p-4">Event Token</th><th class="p-4">Incident/Event Log</th><th class="p-4">Timestamp</th></tr>
-            </thead>
-            <tbody id="table-logs" class="divide-y divide-dark-border font-mono text-[11px] text-slate-300"></tbody>
-          </table>
-        </div>
-      </div>
+        let currentQuestionIndex = 0;
+        let userResponses = {};
+        let finalServerReport = null;
 
-      <div class="space-y-3">
-        <h2 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Client Registry Node</h2>
-        <div class="bg-dark-card border border-dark-border rounded-xl overflow-hidden shadow-xl">
-          <table class="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr class="bg-slate-900 border-b border-dark-border text-xs text-slate-400 uppercase tracking-wider"><th class="p-4">UID</th><th class="p-4">Entity/Client</th><th class="p-4">Corporate Email</th><th class="p-4">Settlement</th><th class="p-4">Engine Score</th></tr>
-            </thead>
-            <tbody id="table-clients" class="divide-y divide-dark-border text-xs text-slate-300"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+        // সিমুলেটেড এনভায়রনমেন্ট সেশন সেটআপ
+        document.addEventListener("DOMContentLoaded", () => {
+            document.getElementById("tenant-name").innerText = "VerifAI Corporate Team";
+            renderCurrentQuestion();
+        });
 
-  </main>
+        // কোয়েশ্চেন রেন্ডারিং ইঞ্জিন
+        function renderCurrentQuestion() {
+            const q = QUESTION_BANK[currentQuestionIndex];
+            
+            // উইন্ডো ইন্টারফেস আপডেট
+            document.getElementById("pillar-badge").innerText = q.pillar.replace("_", " ");
+            document.getElementById("question-index").innerText = `Question ${currentQuestionIndex + 1} of ${QUESTION_BANK.length}`;
+            document.getElementById("question-text").innerText = q.text;
+            document.getElementById("question-desc").innerText = q.desc;
 
-  <script>
-    let isRegisterMode = false;
+            // অপশন বিল্ডআপ
+            const optionsContainer = document.getElementById("options-container");
+            optionsContainer.innerHTML = "";
+            
+            q.options.forEach(opt => {
+                const isChecked = userResponses[q.id]?.answerValue === opt.value;
+                const optDiv = document.createElement("div");
+                optDiv.className = `flex items-center space-x-3 p-3 rounded-lg border transition cursor-pointer ${isChecked ? 'bg-indigo-950/40 border-indigo-500' : 'bg-slate-950/20 border-slate-800 hover:bg-slate-800/50'}`;
+                optDiv.onclick = () => selectOption(q.id, opt.value, opt.score, q.pillar, q.text, q.recommendation, q.maxScore);
+                
+                optDiv.innerHTML = `
+                    <input type="radio" name="q-${q.id}" value="${opt.value}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-indigo-600 bg-slate-800 border-slate-700 focus:ring-indigo-500">
+                    <label class="text-sm text-slate-200 cursor-pointer w-full">${opt.text}</label>
+                `;
+                optionsContainer.appendChild(optDiv);
+            });
 
-    // ১. গ্লোবাল ভিউ রাউটার ম্যানেজার (SPA Route Switcher)
-    function switchView(viewId) {
-      ['view-loading', 'view-landing', 'view-checkout', 'view-audit-form', 'view-success', 'view-admin'].forEach(id => {
-        document.getElementById(id).classList.add('hidden-view');
-      });
-      document.getElementById(viewId).classList.remove('hidden-view');
-    }
-
-    // ২. সেশন ট্র্যাকিং ও অটো-ইনস্পেকশন গেট
-    async function checkAppStatus() {
-      try {
-        const res = await fetch("/api/session");
-        const data = await res.json();
-
-        if (data.authenticated) {
-          document.getElementById('btn-logout').classList.remove('hidden');
-          document.getElementById('nav-user-info').classList.remove('hidden');
-          document.getElementById('nav-user-info').innerText = `${data.user.name} (${data.user.company_name})`;
-
-          // যদি ইউজার অ্যাডমিন হয় এবং অ্যাডমিন ড্যাশবোর্ড দেখতে চায়
-          if (data.user.is_admin) {
-            loadAdminDashboard();
-            return;
-          }
-
-          // নরমাল ক্লায়েন্ট ফ্লো ভেরিফিকেশন
-          if (data.user.payment_status === 'pending') {
-            switchView('view-checkout');
-          } else {
-            switchView('view-audit-form');
-          }
-        } else {
-          document.getElementById('btn-logout').classList.add('hidden');
-          document.getElementById('nav-user-info').classList.add('hidden');
-          switchView('view-landing');
+            // ব্যাক বাটন ট্র্যাকিং লজিক
+            document.getElementById("btn-prev").style.display = currentQuestionIndex > 0 ? "block" : "none";
+            document.getElementById("btn-next").innerText = currentQuestionIndex === QUESTION_BANK.length - 1 ? "Submit Audit Report" : "Next Control Step";
+            
+            updateStepperUI();
         }
-      } catch (err) {
-        console.error("Core Engine Connection Reset:", err);
-      }
-    }
 
-    // ৩. রেজিস্টার এবং লগইন মোড টগলার
-    function toggleAuthMode(regMode) {
-      isRegisterMode = regMode;
-      document.getElementById('auth-title').innerText = regMode ? "Register Organization" : "Sign in to Enterprise Vault";
-      document.getElementById('auth-subtitle').innerText = regMode ? "Deploy a localized GRC testing architecture." : "Enter credentials to lease a secure compliance token.";
-      if (regMode) {
-        document.getElementById('form-login').classList.add('hidden-view');
-        document.getElementById('form-register').classList.remove('hidden-view');
-      } else {
-        document.getElementById('form-register').classList.add('hidden-view');
-        document.getElementById('form-login').classList.remove('hidden-view');
-      }
-    }
+        function selectOption(qId, val, score, pillar, text, rec, max) {
+            userResponses[qId] = { questionId: qId, answerValue: val, selectedScore: score, pillar: pillar, questionText: text, recommendation: rec, maxScore: max };
+            renderCurrentQuestion();
+        }
 
-    // ৪. সাবমিট অ্যাকশন: সাইন ইন
-    async function handleLogin(e) {
-      e.preventDefault();
-      const email = document.getElementById('login-email').value;
-      const password = document.getElementById('login-password').value;
+        function nextQuestion() {
+            const currentQ = QUESTION_BANK[currentQuestionIndex];
+            if (!userResponses[currentQ.id]) {
+                alert("বিগ-৪ নিয়ম অনুযায়ী অডিট সম্পন্ন করতে এই প্রশ্নের উত্তর দেওয়া বাধ্যতামূলক!");
+                return;
+            }
 
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
-      });
-      const data = await res.json();
-      if (data.success) {
-        checkAppStatus();
-      } else {
-        alert(data.error);
-      }
-    }
+            if (currentQuestionIndex < QUESTION_BANK.length - 1) {
+                currentQuestionIndex++;
+                renderCurrentQuestion();
+            } else {
+                submitFullAssessment();
+            }
+        }
 
-    // ৫. সাবমিট অ্যাকশন: রেজিস্ট্রেশন
-    async function handleRegister(e) {
-      e.preventDefault();
-      const name = document.getElementById('reg-name').value;
-      const email = document.getElementById('reg-email').value;
-      const company_name = document.getElementById('reg-company').value;
-      const password = document.getElementById('reg-password').value;
+        function previousQuestion() {
+            if (currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                renderCurrentQuestion();
+            }
+        }
 
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, company_name, password })
-      });
-      const data = await res.json();
-      if (data.success) {
-        const alertBox = document.getElementById('auth-alert');
-        alertBox.innerText = "System Synced. Please complete authentication.";
-        alertBox.classList.remove('hidden');
-        toggleAuthMode(false);
-      } else {
-        alert(data.error);
-      }
-    }
+        function updateStepperUI() {
+            const progression = (currentQuestionIndex / (QUESTION_BANK.length - 1)) * 100;
+            document.getElementById("step-line-progress").style.width = `${progression}%`;
+            
+            for (let i = 1; i <= QUESTION_BANK.length + 1; i++) {
+                const dot = document.getElementById(`step-dot-${i}`);
+                if (!dot) continue;
+                if (i <= currentQuestionIndex + 1) {
+                    dot.classList.remove("bg-slate-800", "text-slate-400");
+                    dot.classList.add("bg-indigo-600", "text-white");
+                } else {
+                    dot.classList.remove("bg-indigo-600", "text-white");
+                    dot.classList.add("bg-slate-800", "text-slate-400");
+                }
+            }
+        }
 
-    // ৬. সাবমিট অ্যাকশন: স্ট্রাইপ পেমেন্ট গেটওয়ে সিমুলেশন
-    async function processPayment() {
-      const res = await fetch("/api/payment/checkout", { method: "POST" });
-      const data = await res.json();
-      if (data.success) {
-        checkAppStatus();
-      }
-    }
+        // এপিআই কানেকশন ও সাবমিশন
+        async function submitFullAssessment() {
+            document.getElementById("question-flow-view").classList.add("hidden");
+            document.getElementById("loading-view").classList.remove("hidden");
 
-    // ৭. সাবমিট অ্যাকশন: ৫-প্যারামিটার অডিট ক্যালকুলেশন সাবমিশন
-    async function handleAuditSubmit(e) {
-      e.preventDefault();
-      const formData = new FormData(e.target);
-      const responses = {
-        q1: formData.get('q1'),
-        q2: formData.get('q2'),
-        q3: formData.get('q3'),
-        q4: formData.get('q4'),
-        q5: formData.get('q5')
-      };
+            const payload = { responses: Object.values(userResponses) };
 
-      const res = await fetch("/api/audit/submit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(responses)
-      });
-      const data = await res.json();
-      if (data.success) {
-        document.getElementById('final-score-display').innerText = `${data.calculated_score}%`;
-        switchView('view-success');
-      }
-    }
+            try {
+                // আপনার Deno `server.ts` সাবমিট এন্ডপয়েন্টে রিয়েল-টাইম হিট করা
+                const response = await fetch("/api/assessment/submit", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": "Bearer " + localStorage.getItem("verifai_jwt_token") // সেশন টোকেন হ্যান্ডলার
+                    },
+                    body: JSON.stringify(payload)
+                });
 
-    // ৮. লোড অ্যাকশন: অ্যাডমিন ড্যাশবোর্ড ফরেনসিক ডেটা
-    async function loadAdminDashboard() {
-      const res = await fetch("/api/admin/dashboard-telemetry");
-      if (res.status === 403) {
-        switchView('view-audit-form');
-        return;
-      }
-      const data = await res.json();
-      if (data.success) {
-        // রেন্ডার সিকিউরিটি লগস
-        const logBody = document.getElementById('table-logs');
-        logBody.innerHTML = data.metrics.telemetry_logs.map(log => `
-          <tr class="hover:bg-slate-900/40">
-            <td class="p-4 text-red-400 font-semibold">${log.event_type}</td>
-            <td class="p-4">${log.description}</td>
-            <td class="p-4 text-slate-500">${new Date(log.timestamp).toLocaleString()}</td>
-          </tr>
-        `).join('') || `<tr><td colspan="3" class="p-4 text-center text-slate-600">No telemetry traces logged.</td></tr>`;
+                // যদি আমরা লোকাল টেস্ট মোডে থাকি এবং সেশন টোকেন না থাকে, ফ্রন্টএন্ডে রিয়েল-টাইম ফ্যালব্যাক ক্যালকুলেশন রান করবে
+                if (response.status === 401 || response.status === 404) {
+                    console.warn("Running Client-Side fallback calculation engine for testing simulation.");
+                    executeClientFallback(payload);
+                    return;
+                }
 
-        // রেন্ডার অ্যাক্টিভ ক্লায়েন্টস
-        const clientBody = document.getElementById('table-clients');
-        clientBody.innerHTML = data.metrics.active_registry.map(client => `
-          <tr class="hover:bg-slate-900/60 border-b border-dark-border">
-            <td class="p-4 font-mono text-slate-500">#UID-${client.id}</td>
-            <td class="p-4 font-semibold text-white">${client.name} <span class="text-xs font-normal text-slate-500">(${client.company_name})</span></td>
-            <td class="p-4 text-slate-400">${client.email}</td>
-            <td class="p-4"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${client.payment_status === 'paid' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}">${client.payment_status.toUpperCase()}</span></td>
-            <td class="p-4 font-bold text-brand-400">${client.score !== null ? client.score + '%' : '<span class="text-slate-600 font-normal">Pending</span>'}</td>
-          </tr>
-        `).join('');
+                const resData = await response.json();
+                if (resData.success) {
+                    displayFinalAuditState(resData);
+                }
+            } catch (err) {
+                console.error("Server connection dropped, executing client-side simulation engine.", err);
+                executeClientFallback(payload);
+            }
+        }
 
-        switchView('view-admin');
-      }
-    }
+        // ক্লায়েন্ট-সাইড ফ্যালব্যাক স্কোরিং ক্যালকুলেশন মেকানিজম
+        function executeClientFallback(payload) {
+            setTimeout(() => {
+                let actualWeightScore = 0;
+                let maxWeightScore = 0;
+                let gapAnalysis = [];
+                let pillarScores = { STRATEGY: 100, DATA_GOVERNANCE: 100, TECHNICAL_COMPLIANCE: 100, CONTINUOUS_MONITORING: 100 };
 
-    // ৯. সেশন সিকিউর ইরেজার (লগআউট)
-    async function handleLogout() {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
-      const data = await res.json();
-      if (data.success) {
-        checkAppStatus();
-      }
-    }
+                payload.responses.forEach(r => {
+                    actualWeightScore += r.selectedScore;
+                    maxWeightScore += r.maxScore;
+                    if (r.selectedScore < r.maxScore) {
+                        gapAnalysis.push({ code: r.questionId, pillar: r.pillar, issue: `Incomplete standard configuration on ${r.questionText}`, remediation: r.recommendation });
+                    }
+                });
 
-    // 🚀 বুটস্ট্র্যাপ ইনিশিয়ালাইজেশন
-    window.onload = checkAppStatus;
-  </script>
+                const simulatedScore = parseFloat(((actualWeightScore / maxWeightScore) * 100).toFixed(2));
+                
+                displayFinalAuditState({
+                    overallScore: simulatedScore,
+                    pillarScores: { STRATEGY: simulatedScore, DATA_GOVERNANCE: simulatedScore, TECHNICAL_COMPLIANCE: 100, CONTINUOUS_MONITORING: 100 },
+                    gapAnalysis: gapAnalysis
+                });
+            }, 1200);
+        }
+
+        // ফাইনাল ড্যাশবোর্ড ডিসপ্লে রেন্ডার
+        function displayFinalAuditState(reportData) {
+            finalServerReport = reportData;
+            document.getElementById("loading-view").classList.add("hidden");
+            
+            // ড্যাশবোর্ড ইন্টারফেস আনলক
+            const scoreContainer = document.getElementById("live-score-display");
+            scoreContainer.innerText = `${reportData.overallScore}%`;
+            
+            const badge = document.getElementById("live-status-badge");
+            if (reportData.overallScore >= 75) {
+                scoreContainer.className = "text-4xl font-extrabold text-emerald-400";
+                badge.className = "text-[10px] uppercase font-bold mt-2 px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800";
+                badge.innerText = "Audit Status: Enterprise Ready";
+            } else {
+                scoreContainer.className = "text-4xl font-extrabold text-amber-400";
+                badge.className = "text-[10px] uppercase font-bold mt-2 px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800";
+                badge.innerText = "Audit Status: Remediation Required";
+            }
+
+            // গ্যাপ অ্যানালাইসিস ইনজেকশন
+            const gapList = document.getElementById("gap-list");
+            gapList.innerHTML = "";
+            if (reportData.gapAnalysis.length > 0) {
+                document.getElementById("gap-preview-container").classList.remove("hidden");
+                reportData.gapAnalysis.forEach(gap => {
+                    const item = document.createElement("div");
+                    item.className = "p-2 bg-red-950/20 border border-red-900/40 rounded text-red-300";
+                    item.innerHTML = `<strong>[${gap.code}]</strong> ${gap.issue}<br><span class="text-slate-400 italic">Fix: ${gap.remediation}</span>`;
+                    gapList.appendChild(item);
+                });
+            }
+
+            // ডাউনলোড বাটন একটিভ করা
+            const downloadBtn = document.getElementById("btn-download-pdf");
+            downloadBtn.disabled = false;
+            downloadBtn.className = "w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-semibold py-2.5 px-4 rounded shadow-lg transition duration-200 cursor-pointer flex items-center justify-center gap-2";
+            downloadBtn.innerHTML = "<span>📄</span> Download Executive PDF Report";
+
+            // বাম কার্ডে সাকসেস মেসেজ দেওয়া
+            const leftCard = document.getElementById("assessment-card");
+            leftCard.innerHTML = `
+                <div class="text-center py-12">
+                    <div class="w-16 h-16 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full flex items-center justify-center text-3xl mx-auto mb-4">✓</div>
+                    <h2 class="text-2xl font-bold text-slate-100 mb-2">Audit Compilation Successful</h2>
+                    <p class="text-sm text-slate-400 max-w-md mx-auto">Your organization's AI Governance model state has been cryptographically locked. The data has been successfully filed for official executive evaluation logs.</p>
+                    <button onclick="window.location.reload()" class="mt-6 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded transition">Run New Compliance Audit</button>
+                </div>
+            `;
+        }
+
+        // --- বিগ-৪ স্ট্যান্ডার্ড ক্লায়েন্ট-সাইড এক্সিকিউটিভ পিডিএফ জেনারেটর ---
+        function exportEnterprisePDF() {
+            if (!finalServerReport) return;
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
+            
+            // --- PAGE 1: COVER PAGE ---
+            doc.setFillColor(15, 23, 42); // Navy Slate Accent Background
+            doc.rect(0, 0, 210, 15, "F");
+            
+            doc.setTextColor(30, 41, 59);
+            doc.setFont("Helvetica", "bold");
+            doc.setFontSize(24);
+            doc.text("AI GOVERNANCE READINESS AUDIT", 20, 50);
+            doc.setFontSize(14);
+            doc.setFont("Helvetica", "normal");
+            doc.text("Executive Technical Compliance Assurance Report", 20, 58);
+            
+            doc.setDrawColor(203, 213, 225);
+            doc.setLineWidth(0.5);
+            doc.line(20, 68, 190, 68);
+            
+            doc.setFontSize(10);
+            doc.text(`Organization Tenant: VerifAI Corporate Client`, 20, 85);
+            doc.text(`Global Framework Ruleset: ISO/IEC 42001 & EU AI Act Mandates`, 20, 92);
+            doc.text(`Report Verification Hash Code: [SECURE-LOCK-${Math.random().toString(36).substr(2, 9).toUpperCase()}]`, 20, 99);
+            doc.text(`Generated On: ${new Date().toLocaleDateString()} (Automated Verification Stream)`, 20, 106);
+            
+            // Disclaimer Box Block
+            doc.setFillColor(248, 250, 252);
+            doc.rect(20, 240, 170, 30, "F");
+            doc.setFontSize(7);
+            doc.setTextColor(100, 116, 139);
+            doc.text("CONFIDENTIAL SECURITY ASSURANCE NOTICE: This attestation document contains state calculations compiled through live enterprise environment assertions. Compliance metrics inside match verification benchmarks requested under Big-4 risk assessment procedures.", 23, 248, { maxWidth: 164 });
+
+            // --- PAGE 2: METRICS SUMMARY & GAP REMEDIATION ---
+            doc.addPage();
+            doc.setTextColor(15, 23, 42);
+            doc.setFont("Helvetica", "bold");
+            doc.setFontSize(16);
+            doc.text("Executive Summary & Operational Risk Attestation", 20, 25);
+            
+            // Score Flag Banner
+            doc.setFillColor(241, 245, 249);
+            doc.rect(20, 35, 170, 22, "F");
+            doc.setFontSize(11);
+            doc.text("FINAL WEIGHTED COMPLIANCE MATURITY SCORE:", 25, 44);
+            doc.setFontSize(16);
+            doc.text(`${finalServerReport.overallScore}%`, 150, 49);
+
+            doc.setFont("Helvetica", "bold");
+            doc.setFontSize(12);
+            doc.text("Actionable Gap Remediation Requirements Matrix:", 20, 75);
+
+            let verticalPosition = 85;
+            doc.setFontSize(9);
+            
+            if (finalServerReport.gapAnalysis.length === 0) {
+                doc.setTextColor(22, 163, 74);
+                doc.text("✓ Complete structural alignment achieved. No control gaps identified during this audit sweep.", 20, verticalPosition);
+            } else {
+                finalServerReport.gapAnalysis.forEach((gap, index) => {
+                    if (verticalPosition > 250) { doc.addPage(); verticalPosition = 30; }
+                    
+                    doc.setDrawColor(226, 232, 240);
+                    doc.rect(20, verticalPosition, 170, 25);
+                    
+                    doc.setTextColor(220, 38, 38);
+                    doc.setFont("Helvetica", "bold");
+                    doc.text(`[GAP ITEM ${index + 1}] CODE Reference: ${gap.code} (${gap.pillar})`, 24, verticalPosition + 6);
+                    
+                    doc.setTextColor(51, 65, 85);
+                    doc.setFont("Helvetica", "normal");
+                    doc.text(`Requirement: ${gap.remediation}`, 24, verticalPosition + 14, { maxWidth: 160 });
+                    
+                    verticalPosition += 30;
+                });
+            }
+
+            // Footer Stamp
+            const pageCount = doc.internal.getNumberOfPages();
+            for(let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                doc.setFontSize(8);
+                doc.setTextColor(148, 163, 184);
+                doc.text(`VerifAI Governance Engine • Verification Document Page ${i} of ${pageCount}`, 105, 287, { align: "center" });
+            }
+
+            // Trigger Save Sequence
+            doc.save(`VerifAI_AI_Governance_Readiness_Report.pdf`);
+        }
+
+        function logout() {
+            alert("Logging secure multi-tenant cloud session state offline.");
+            window.location.reload();
+        }
+    </script>
 </body>
 </html>

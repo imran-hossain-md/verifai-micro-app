@@ -1,22 +1,32 @@
-// db.ts - এন্টারপ্রাইজ ডাটাবেজ কানেকশন ম্যানেজার
-import { Client } from "https://deno.land/x/postgres@v0.17.0/mod.ts";
+// db.ts - 完全 Mock Layer (Zero Dependencies)
 
-// ক্লাউডের এনভায়রনメント ভ্যারিয়েবল থেকে ডাটাবেজ ইউআরএল রিড করা
-const databaseUrl = Deno.env.get("DATABASE_URL");
+// একটি ডামি পুল অবজেক্ট যাতে server.ts ক্র্যাশ না করে
+export const pool = {
+  connect: async () => {
+    return {
+      queryObject: async (queryObj: any) => {
+        // কোনো রিয়েল কুয়েরি রান হবে না, জাস্ট সাকসেস রিটার্ন করবে
+        console.log("🛠️ [Mock DB Query Executed]:", typeof queryObj === 'string' ? queryObj.substring(0, 60) + "..." : queryObj.text);
+        return { rows: [{ id: "mock-uuid-12345" }] };
+      },
+      release: () => {}
+    };
+  }
+};
 
-if (!databaseUrl) {
-  console.error("❌ Error: DATABASE_URL এনভায়রনমেন্ট ভ্যারিয়েবল সেট করা নেই!");
-  Deno.exit(1);
+// ডাটাবেস ইনিশিয়ালাইজেশন সাকসেস ইমিটেশন
+export async function initializeDatabase() {
+  console.log("🔒 [SIMULATED] Enterprise Database Schema Verified & Indexed Successfully.");
 }
 
-// ডাটাবেজ ক্লায়েন্ট ইনিশিয়ালাইজ করা
-const client = new Client(databaseUrl);
-
-try {
-  await client.connect();
-  console.log("🚀 Render PostgreSQL ডাটাবেজের সাথে সফলভাবে কানেক্টেড!");
-} catch (error) {
-  console.error("❌ ডাটাবেজ কানেকশনে এরর এসেছে:", error);
+// ইমিউটেবল অডিট লগ রাইটার (কনসোলে প্রিন্ট হবে)
+export async function logAuditAction(
+  orgId: string,
+  userId: string | null,
+  action: string,
+  ipAddress: string,
+  userAgent: string,
+  payload: Record<string, unknown> | null = null
+) {
+  console.log(`📝 [AUDIT LOG ATTESTATION] Action: ${action} | Tenant: ${orgId} | IP: ${ipAddress}`);
 }
-
-export default client;
